@@ -26,32 +26,34 @@ use AMC::Basic;
 
 
 sub new {
-    my %o=(@_);
-    my $self={
-	'commande'=>'',
-	'fin'=>'',
-	'finw'=>'',
-	'signal'=>9,
-	'o'=>{},
-	'clear'=>1,
+    my %o    = (@_);
+    my $self = {
+        'commande' => '',
+        'fin'      => '',
+        'finw'     => '',
+        'signal'   => 9,
+        'o'        => {},
+        'clear'    => 1,
 
-	'messages'=> {},
-	'variables'=>{},
+        'messages'  => {},
+        'variables' => {},
 
-	'pid'=>'',
-	'fh'=>'',
+        'pid' => '',
+        'fh'  => '',
     };
 
-    for (keys %o) {
-	$self->{$_}=$o{$_} if(defined($self->{$_}) || /^niveau/);
+    for ( keys %o ) {
+        $self->{$_} = $o{$_} if ( defined( $self->{$_} ) || /^niveau/ );
     }
 
-    $self->{'commande'}=[$self->{'commande'}] if(!ref($self->{'commande'}));
+    $self->{'commande'} = [ $self->{'commande'} ]
+        if ( !ref( $self->{'commande'} ) );
 
     bless $self;
 
-    return($self);
+    return ($self);
 }
+
 
 sub proc_pid {
     my ($self)=(@_);
