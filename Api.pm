@@ -120,7 +120,7 @@ if ($debug) {
 sub new {
     my $class = shift;
     my ( $dir, $project_dir ) = @_;
-    my $self = { status => '', errors => (), messages => () };
+    my $self = { status => '', errors => (), messages => (), data => {} };
     $self->{config} = AMC::Config::new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
@@ -239,23 +239,14 @@ sub exporte {
             if ( -f $output ) {
 
                 # shows export messages
-                my $t = $c->higher_message_type();
-                if ($t) {
-                    $c->get_messages($t);    #error
-                }
-                if ( $self->{config}->get('after_export') eq 'file' ) {
-                    commande_parallele(
-                        $self->{config}->get( $type . '_viewer' ), $output )
-                        if ( $self->{config}->get( $type . '_viewer' ) );
-                }
-                elsif ( $self->{config}->get('after_export') eq 'dir' ) {
-                    view_dir(
-                        $self->{config}->get_absolute('%PROJET/exports/') );
-                }
+                
+                    $c->erreurs();    #error
+                    $c->warning();    #error
+                
+
             }
             else {
-                print( __"Export to %s did not work: file not created...",
-                    $output );    #error
+                print( __"Export to %s did not work: file not created...",$output );    #error
             }
         }
     );
@@ -275,29 +266,10 @@ sub commande {
     $c->execute();
 }
 
-sub commande_parallele {
-    my (@c) = (@_);
-    if ( commande_accessible( $c[0] ) ) {
-        my $pid = fork();
-        if ( $pid == 0 ) {
-            exec(@c);
-            exit(0);
-        }
-    }
-    else {
-        sprintf(
-            __
-                "Following command could not be run: <b>%s</b>, perhaps due to a poor configuration?",
-            $c[0]
-        );    #error
-    }
-}
-
 sub doc_maj {
-    my $self = shift;
-    my $sur  = 0;
+    my ($self,sur) = @_;
     if ( $self->{project}->{'_capture'}->n_pages_transaction() > 0 ) {
-        print(
+        push ($self->{messages},
             __( "Papers analysis was already made on the basis of the current working documents."
                 )
                 . " "
@@ -308,20 +280,7 @@ sub doc_maj {
                 . __(
                 "If you modify working documents, you will not be capable any more of analyzing the papers you have already distributed!"
                 )
-                . " "
-                . __("Do you wish to continue?") . " "
-                . __(
-                "Click on OK to erase the former layouts and update working documents, or on Cancel to cancel this operation."
-                )
-                . " " . "<b>"
-                . __(
-                "To allow the use of an already printed question, cancel!")
-                . "</b>"
-        );    #error
-        if ( $reponse ne 'ok' ) {
-            return (0);
-        }
-        $sur = 1;
+        );
     }
 
     # deja des MEP fabriquees ?
@@ -330,31 +289,17 @@ sub doc_maj {
     $self->{project}->{_layout}->end_transaction('DMAJ');
     if ( $pc > 0 ) {
         if ( !$sur ) {
-            print(
+            push ($self->{messages},
                 __( "Layouts are already calculated for the current documents."
                     )
                     . " "
                     . __(
                     "Updating working documents, the layouts will become obsolete and will thus be erased."
                     )
-                    . " "
-                    . __("Do you wish to continue?") . " "
-                    . __(
-                    "Click on OK to erase the former layouts and update working documents, or on Cancel to cancel this operation."
-                    )
-                    . " <b>"
-                    . __(
-                    "To allow the use of an already printed question, cancel!"
-                    )
-                    . "</b>"
-            );    #error
-
-            if ( $reponse ne 'ok' ) {
-                return (0);
-            }
+            );
         }
 
-        clear_processing('mep:');
+        $self->clear_processing('mep:');
     }
 
     # new layout document : XY (from LaTeX)
@@ -394,7 +339,8 @@ sub doc_maj {
         $message
             .= __("Install these components on your system and try again.");
 
-        print($message);    #error
+        push ($self->{errors},$message);
+        $self->{status} =412;
 
         return (0);
     }
@@ -465,8 +411,6 @@ sub doc_maj {
                 my @warn = $c->warnings();
                 if ( @err || @warn ) {
                     debug "Errors preparing documents!";
-                    notify_end_of_work( 'documents',
-                        __ "Problems while preparing documents" );
                     my $message
                         = __("Problems while processing the source file.")
                         . " "
@@ -518,7 +462,8 @@ sub doc_maj {
                         "Use LaTeX editor or latex command for a precise diagnosis."
                         ) if ( $self->{config}->get('filter') eq 'latex' );
 
-                    print($message);    #error
+                    push ($self->{errors},$message);
+                    $self->{status} = 412;
 
                 }
                 else {
@@ -563,7 +508,7 @@ sub doc_maj {
                 if ( ( $ensemble || $c->variable('insidebox') )
                     && $self->{config}->get('seuil') < 0.4 )
                 {
-                    sprintf(
+                    push ($self->{messages},
                         (   $ensemble
                             ? __(
                                 "Your question has a separate answers sheet.")
@@ -579,20 +524,18 @@ sub doc_maj {
 
 # TRANSLATORS: Here, %s will be replaced with the translation of "darkness threshold".
                             . __(
-                            "For better ticking detection, ask students to fill out completely boxes, and choose parameter \"%s\" around 0.5 for this project."
+                            "For better ticking detection, ask students to fill out completely boxes, and choose parameter \"%s\" around 0.86 for this project."
                             )
                             . " "
                             . __(
                             "At the moment, this parameter is set to %.02f.")
-                            . " "
-                            . __("Would you like to set it to 0.5?")
 
 # TRANSLATORS: This parameter is the ratio of dark pixels number over total pixels number inside box above which a box is considered to be ticked.
                         ,
                         __ "darkness threshold",
                         $self->{config}->get('seuil')
-                    );    #error
-                    $self->{config}->set( 'seuil',    0.5 );
+                    );
+                    $self->{config}->set( 'seuil',    0.86 );
                     $self->{config}->set( 'seuil_up', 1.0 );
                 }
                 $self->detecte_documents();
@@ -624,7 +567,7 @@ sub sujet_impressions_ok {
     if ( !@e ) {
 
         # No page selected:
-        print( __("You did not select any exam to print...") );    #error
+        push ($self->{messages}, __("You did not select any exam to print...") );
         return ();
     }
 
@@ -650,7 +593,7 @@ sub sujet_impressions_ok {
                 # This looks strange: a few sheets printed, a few sheets
                 # generated, and photocopy mode not selected yet. Ask the
                 # user if he wants to select this mode now.
-                print(
+                push ($self->{messages},
                     __("You selected only a few sheets to print.") . "\n"
                         . "<b>"
                         . __(
@@ -660,14 +603,8 @@ sub sujet_impressions_ok {
                         . __(
                         "If so, the corresponding option will be set for this project."
                         )
-                        . " "
-                        . __(
-                        "However, you will be able to change this when giving your first scans to AMC."
-                        )
-                );    #error
-
-                my $mult = ( $reponse eq 'yes' ? 1 : 0 );
-                $self->{config}->set( 'auto_capture_mode', $mult );
+                );
+                $self->{config}->set( 'auto_capture_mode', 1 );
             }
         }
     }
@@ -678,7 +615,7 @@ sub sujet_impressions_ok {
         # This options needs pdftk!
         if ( $self->{config}->get('print_extract_with') ne 'pdftk' ) {
             if ( commande_accessible('pdftk') ) {
-                print(
+                push ($self->{messages},
 # TRANSLATORS: the two %s will be replaced by the translations of "Answer sheet first" and "Extracting method".
                     sprintf(
                         __( "You selected the '%s' option, that uses 'pdftk', so the %s has been set to 'pdftk' for you."
@@ -686,16 +623,17 @@ sub sujet_impressions_ok {
                         __("Answer sheet first"),
                         __("Extracting method")
                     )
-                );    #error
+                );
 
                 $self->{config}->set( "print_extract_with", 'pdftk' );
             }
             else {
-
-                sprintf(
-                    __( "You selected the '%s' option, but this option needs 'pdftk' to be installed on your system. Please install it and try again."
-                    ),
-                    __ "Answer sheet first"
+                push ($self->{messages},
+                    sprintf(
+                        __( "You selected the '%s' option, but this option needs 'pdftk' to be installed on your system. Please install it and try again."
+                        ),
+                        __ "Answer sheet first"
+                    )
                 );
 
                 return ();
@@ -807,7 +745,7 @@ sub calcule_mep {
     if ( $self->{config}->get('doc_setting') !~ /\.xy$/ ) {
 
         # OLD STYLE WORKING DOCUMENTS... Not supported anymore: update!
-        print(
+        push ($self->{messages},(
             __( "Working documents are in an old format, which is not supported anymore."
                 )
                 . " <b>"
@@ -844,13 +782,13 @@ sub calcule_mep {
                 if ( $c < 1 ) {
 
                     # avertissement...
-                    print(
+                    push ($self->{errors},
                         __("No layout detected.") . " "
                             . __(
                             "<b>Don't go through the examination</b> before fixing this problem, otherwise you won't be able to use AMC for correction."
                             )
-                    );    #error
-
+                    );
+                    $self->{status} = 412;
                 }
                 else {
 
@@ -997,10 +935,11 @@ sub valide_liste {
     if ($err) {
 
         if ( !$oo{'noinfo'} ) {
-
-            sprintf( __ "Unsuitable names file: %d errors, first on line %d.",
-                $err, $errlig );
-
+            push ($self->{errors},
+                sprintf( __ "Unsuitable names file: %d errors, first on line %d.",
+                    $err, $errlig )
+            );
+            $self->{status} = 412;
         }
     }
     else {
@@ -1008,11 +947,11 @@ sub valide_liste {
         my $e = $self->{project}->{_students_list}->problem('ID.empty');
         if ( $e > 0 ) {
             debug "NamesFile: $e empty IDs";
-            sprintf( __
+            push ($self->{messages}, sprintf( __
                     "Found %d empty names in names file <i>%s</i>. Check that <b>name</b> or <b>surname</b> column is present, and always filled.",
                 $e, $fl )
                 . " "
-                . __ "Edit the names file to correct it, and re-read.";
+                . __ "Edit the names file to correct it, and re-read.");
         }
         else {
             my $d = $self->{project}->{_students_list}->problem('ID.dup');
@@ -1021,13 +960,13 @@ sub valide_liste {
                 if ( $#{$d} > 8 ) {
                     @$d = ( @{$d}[ 0 .. 8 ], '(and more)' );
                 }
-                sprintf(
+                push ($self->{messages},sprintf(
                     __
                         "Found duplicate names: <i>%s</i>. Check that all names are different.",
                     join( ', ', @$d )
                     )
                     . " "
-                    . __ "Edit the names file to correct it, and re-read.";
+                    . __ "Edit the names file to correct it, and re-read.");
 
             }
         }
@@ -1071,10 +1010,12 @@ sub associe {
     }
     else {
 
-        sprintf(
+        push ($self->{messages}, 
+            sprintf(
             __
                 "Before associating names to papers, you must choose a students list file in paragraph \"%s\".",
             __ "Students identification"
+            )
         );
 
     }
@@ -1128,7 +1069,8 @@ sub assoc_resultat {
     my ( $auto, $man, $both ) = $self->{project}->{'_association'}->counts();
     $self->{project}->{'_association'}->end_transaction('ARCC');
 
-    sprintf(
+    push ($self->{messages},
+        sprintf(
         __("Automatic association completed: %d students recognized."),
         $auto
         )
@@ -1143,9 +1085,10 @@ sub assoc_resultat {
             __("Primary key from this list"),
             __("Code name for automatic association")
             )
-            . "</b>"
+
         : ""
-        );
+        )
+    );
 }
 
 
@@ -1248,7 +1191,7 @@ sub noter_calcul {
         'progres.id' => 'notation',
         'fin'        => sub {
             my ( $c, %data ) = @_;
-            notify_end_of_work( 'grading', __ "Grading has been completed" )
+            push ($self->{messages}, __ "Grading has been completed" )
                 if ( !$data{cancelled} );
             $self->noter_resultat();
         },
@@ -1261,14 +1204,10 @@ sub noter_resultat {
     my $avg = $self->{project}->{'_scoring'}->average_mark;
 
     if ( defined($avg) ) {
-        #state_image( 'marking', 'gtk-yes' );
-
-        # TRANSLATORS: This is the marks mean for all students.
-        #$w{'state_marking'}->set_text( sprintf( __ "Mean: %.2f", $avg ) );
+        $self->{data}->{mean} = sprintf( "%.2f", $avg );
     }
     else {
-        #state_image( 'marking', 'gtk-dialog-error' );
-        #$w{'state_marking'}->set_text( __("No marks computed") );
+        push ($self->{messages}, __("No marks computed") );
     }
 
     my @codes     = $self->{project}->{'_scoring'}->codes;
@@ -1278,23 +1217,6 @@ sub noter_resultat {
 
     debug "Codes : " . join( ',', @codes );
 
-    # TRANSLATORS: you can omit the [...] part, just here to explain context
-    my @cbs = ( '' => __p("(none) [No code found in LaTeX file]") );
-    if ( my $el = get_enc( $self->{config}->get('encodage_latex') ) ) {
-        push @cbs, map { $_ => decode( $el->{iso}, $_ ) } (@codes);
-    }
-    else {
-        push @cbs, map { $_ => $_ } (@codes);
-    }
-    if ($pre_assoc) {
-        push @cbs, '<preassoc>', __ "Pre-association";
-        debug "Adding pre-association item";
-    }
-    #$prefs->store_register( 'assoc_code' => cb_model(@cbs) );
-    #$prefs->transmet_pref( $gui, 'pref_assoc', 'project:', {},
-     #   { 'assoc_code' => 1 } );
-
-    #$w{'onglet_reports'}->set_sensitive( defined($avg) );
 }
 
 sub assoc_state {
@@ -1321,8 +1243,8 @@ sub assoc_state {
                 "All completed answer sheets are associated with a student name";
         }
     }
-
-    #return?
+    push ($self->{messages}, $t);
+    
 }
 
 sub opt_symbole {
@@ -1435,7 +1357,7 @@ sub annote_copies {
         'fin' => sub {
             my ( $c, %data );
 
-         #notify_end_of_work('annotation',__"Annotations have been completed")
+         push ($self->{messages},__"Annotations have been completed")
             if ( !$data{cancelled} );
         },
     );
@@ -1469,7 +1391,7 @@ sub detecte_documents {
         $s = __("Working documents last update:") . " " . $s;
     }
 
-    #return
+   push ($self->{messages},$s);
 }
 
 sub detecte_mep {
@@ -1482,7 +1404,7 @@ sub detecte_mep {
     my @def = ( keys %{ $self->{project}->{'_mep_defauts'} } );
     if (@def) {
 
-        #errors
+        $self->mep_warnings();
     }
     my $s;
     if ( $c < 1 ) {
@@ -1499,7 +1421,7 @@ sub detecte_mep {
         }
     }
 
-    #return;
+    push ($self->{messages},$s);
 }
 
 my %defect_text = (
@@ -1559,7 +1481,7 @@ sub mep_warnings {
         return ();
     }
 
-    $m;
+    push ($self->{messages},$m);
 
 }
 
@@ -1685,7 +1607,7 @@ sub detecte_analyse {
 
     }
 
-    #return
+    push ($self->{messages},$tt);
 
     if ( $failed_nb <= 0 ) {
         if ( $r{'complete'} ) {
@@ -1703,7 +1625,7 @@ sub detecte_analyse {
 
     }
 
-    #return
+    push ($self->{messages},$tt);
 
     return ( \%r );
 }
@@ -1725,7 +1647,7 @@ sub show_missing_pages {
             . pageids_string( $p->{'student'}, $p->{'page'}, $p->{'copy'} );
     }
 
-    print(    __("Pages that miss data capture to complete students sheets:")
+    push ($self->{messages},    __("Pages that miss data capture to complete students sheets:")
             . "</b>"
             . $l );
 }
@@ -1748,14 +1670,7 @@ sub update_unrecognized {
         my $preproc_file
             = $self->{config}->get_absolute('%PROJET/cr/diagnostic') . "/"
             . $scan_n . ".png";
-
-        #return(
-        #    INCONNU_SCAN,$f,
-        #    INCONNU_FILE,$ff->{'filename'},
-        #    INCONNU_TIME,format_date($ff->{'timestamp'}),
-        #    INCONNU_TIME_N,$ff->{'timestamp'},
-        #    INCONNU_PREPROC,$preproc_file,
-        #    );
+        push ($self->{data},($f, $ff->{'filename'},$preproc_file));
     }
 }
 
