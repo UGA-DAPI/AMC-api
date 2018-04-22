@@ -20,12 +20,6 @@
 
 package Config;
 
-BEGIN {
-    use Exporter   ();
-    our ($VERSION, @ISA, @EXPORT);
-
-    @ISA         = qw(Exporter);
-}
 
 
 use AMC::Basic;
@@ -41,6 +35,7 @@ use Glib;
 use_gettext();
 
 sub new {
+    $class = shift;
     my (%o) = (@_);
 
     my $self = {
@@ -62,15 +57,13 @@ sub new {
         $self->{$k} = $o{$k} if ( defined( $self->{$k} ) );
     }
 
-    bless $self;
-
     if ( !$empty ) {
         $self->defaults();
         $self->check_odir();
         $self->load_state();
         $self->load_profile();
     }
-
+    bless $self, $class;
     return ($self);
 }
 
