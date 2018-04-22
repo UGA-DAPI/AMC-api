@@ -18,7 +18,7 @@
 # along with Auto-Multiple-Choice.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-package AMC::Config;
+package Config;
 
 use AMC::Basic;
 use XML::Simple;

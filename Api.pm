@@ -1684,7 +1684,7 @@ sub update_unrecognized {
         my $preproc_file
             = $self->{config}->get_absolute('%PROJET/cr/diagnostic') . "/"
             . $scan_n . ".png";
-        push( $self->{data}, ( $f, $ff->{'filename'}, $preproc_file ) );
+        #push( %{$self->{data}}, ( $f, $ff->{'filename'}, $preproc_file ) );
     }
 }
 
