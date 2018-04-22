@@ -20,6 +20,14 @@
 
 package Config;
 
+BEGIN {
+    use Exporter   ();
+    our ($VERSION, @ISA, @EXPORT);
+
+    @ISA         = qw(Exporter);
+}
+
+
 use AMC::Basic;
 use XML::Simple;
 use Module::Load;
