@@ -252,10 +252,10 @@ sub commande {
 }
 
 sub doc_maj {
-    my ( $self, sur ) = @_;
+    my ( $self, $sur ) = (@_);
     if ( $self->{project}->{'_capture'}->n_pages_transaction() > 0 ) {
         push(
-            $self->{messages},
+            @{$self->{messages}},
             __( "Papers analysis was already made on the basis of the current working documents."
                 )
                 . " "
@@ -276,7 +276,7 @@ sub doc_maj {
     if ( $pc > 0 ) {
         if ( !$sur ) {
             push(
-                $self->{messages},
+                @{$self->{messages}},
                 __( "Layouts are already calculated for the current documents."
                     )
                     . " "
@@ -496,7 +496,7 @@ sub doc_maj {
                     && $self->{config}->get('seuil') < 0.4 )
                 {
                     push(
-                        $self->{messages},
+                        @{$self->{messages}},
                         (   $ensemble
                             ? __(
                                 "Your question has a separate answers sheet.")
@@ -556,7 +556,7 @@ sub sujet_impressions_ok {
 
         # No page selected:
         push(
-            $self->{messages},
+            @{$self->{messages}},
             __("You did not select any exam to print...")
         );
         return ();
@@ -585,7 +585,7 @@ sub sujet_impressions_ok {
                 # generated, and photocopy mode not selected yet. Ask the
                 # user if he wants to select this mode now.
                 push(
-                    $self->{messages},
+                    @{$self->{messages}},
                     __("You selected only a few sheets to print.") . "\n"
                         . "<b>"
                         . __(
@@ -608,7 +608,7 @@ sub sujet_impressions_ok {
         if ( $self->{config}->get('print_extract_with') ne 'pdftk' ) {
             if ( commande_accessible('pdftk') ) {
                 push(
-                    $self->{messages},
+                    @{$self->{messages}},
 
 # TRANSLATORS: the two %s will be replaced by the translations of "Answer sheet first" and "Extracting method".
                     sprintf(
@@ -623,7 +623,7 @@ sub sujet_impressions_ok {
             }
             else {
                 push(
-                    $self->{messages},
+                    @{$self->{messages}},
                     sprintf(
                         __( "You selected the '%s' option, but this option needs 'pdftk' to be installed on your system. Please install it and try again."
                         ),
@@ -741,7 +741,7 @@ sub calcule_mep {
 
         # OLD STYLE WORKING DOCUMENTS... Not supported anymore: update!
         push(
-            $self->{messages},
+            @{$self->{messages}},
             __( "Working documents are in an old format, which is not supported anymore."
                 )
                 . " <b>"
@@ -948,7 +948,7 @@ sub valide_liste {
         if ( $e > 0 ) {
             debug "NamesFile: $e empty IDs";
             push(
-                $self->{messages},
+                @{$self->{messages}},
                 sprintf( __
                         "Found %d empty names in names file <i>%s</i>. Check that <b>name</b> or <b>surname</b> column is present, and always filled.",
                     $e, $fl )
@@ -964,7 +964,7 @@ sub valide_liste {
                     @$d = ( @{$d}[ 0 .. 8 ], '(and more)' );
                 }
                 push(
-                    $self->{messages},
+                    @{$self->{messages}},
                     sprintf(
                         __
                             "Found duplicate names: <i>%s</i>. Check that all names are different.",
@@ -1017,7 +1017,7 @@ sub associe {
     else {
 
         push(
-            $self->{messages},
+            @{$self->{messages}},
             sprintf(
                 __
                     "Before associating names to papers, you must choose a students list file in paragraph \"%s\".",
@@ -1077,7 +1077,7 @@ sub assoc_resultat {
     $self->{project}->{'_association'}->end_transaction('ARCC');
 
     push(
-        $self->{messages},
+        @{$self->{messages}},
         sprintf(
             __("Automatic association completed: %d students recognized."),
             $auto
@@ -1198,7 +1198,7 @@ sub noter_calcul {
         'progres.id' => 'notation',
         'fin'        => sub {
             my ( $c, %data ) = @_;
-            push( $self->{messages}, __ "Grading has been completed" )
+            push( @{$self->{messages}}, __ "Grading has been completed" )
                 if ( !$data{cancelled} );
             $self->noter_resultat();
         },
@@ -1214,7 +1214,7 @@ sub noter_resultat {
         $self->{data}->{mean} = sprintf( "%.2f", $avg );
     }
     else {
-        push( $self->{messages}, __("No marks computed") );
+        push( @{$self->{messages}}, __("No marks computed") );
     }
 
     my @codes     = $self->{project}->{'_scoring'}->codes;
@@ -1250,7 +1250,7 @@ sub assoc_state {
                 "All completed answer sheets are associated with a student name";
         }
     }
-    push( $self->{messages}, $t );
+    push( @{$self->{messages}}, $t );
 
 }
 
@@ -1364,7 +1364,7 @@ sub annote_copies {
         'fin' => sub {
             my ( $c, %data );
 
-            push( $self->{messages}, __ "Annotations have been completed" )
+            push( @{$self->{messages}}, __ "Annotations have been completed" )
                 if ( !$data{cancelled} );
         },
     );
@@ -1400,7 +1400,7 @@ sub detecte_documents {
         $s = __("Working documents last update:") . " " . $s;
     }
 
-    push( $self->{messages}, $s );
+    push( @{$self->{messages}}, $s );
 }
 
 sub detecte_mep {
@@ -1430,7 +1430,7 @@ sub detecte_mep {
         }
     }
 
-    push( $self->{messages}, $s );
+    push( @{$self->{messages}}, $s );
 }
 
 my %defect_text = (
@@ -1490,7 +1490,7 @@ sub mep_warnings {
         return ();
     }
 
-    push( $self->{messages}, $m );
+    push( @{$self->{messages}}, $m );
 
 }
 
@@ -1616,7 +1616,7 @@ sub detecte_analyse {
 
     }
 
-    push( $self->{messages}, $tt );
+    push( @{$self->{messages}}, $tt );
 
     if ( $failed_nb <= 0 ) {
         if ( $r{'complete'} ) {
@@ -1634,7 +1634,7 @@ sub detecte_analyse {
 
     }
 
-    push( $self->{messages}, $tt );
+    push( @{$self->{messages}}, $tt );
 
     return ( \%r );
 }
@@ -1657,7 +1657,7 @@ sub show_missing_pages {
     }
 
     push(
-        $self->{messages},
+        @{$self->{messages}},
         __("Pages that miss data capture to complete students sheets:")
             . "</b>"
             . $l
@@ -1921,7 +1921,7 @@ sub new {
                     ->set( project_name => $project_dir );
                 if ( -d $self->get_shortcut('%PROJET') ) {
                     $self->{config}->open_project($project_dir);
-                    if defined( $request->{apikey} ) {
+                    if (defined( $request->{apikey} )) {
                         my @config_key = values %PARAMS;
                         my @cli_key    = keys %PARAMS;
                         for my $k ( keys %{$request} ) {
@@ -1929,10 +1929,10 @@ sub new {
                                 if ( defined $config_key[$k] );
                             $self->set_config( $PARAMS{$k}, $request->{$k} )
                                 if ( defined $cli_key[$k] );
-                            $self->{$k} = $request->{$k} ) if ( defined $POST[$k] );
+                            $self->{$k} = $request->{$k} if ( defined $POST[$k] );
 
                         }
-                        $self->{uploads} = $uploads ) if ( defined $uploads );
+                        $self->{uploads} = $uploads if ( defined $uploads );
                     }
                 }
                 elsif (
@@ -1942,15 +1942,14 @@ sub new {
                     )
                 {
                     $self->{status} = 404;
-                    push( $self->{messages}, "Not Found" );
+                    push( @{$self->{messages}}, "Not Found" );
                 }
                 else {
                     $self->{status} = 403;
-                    push( $self->{messages}, "Forbidden" );
+                    push( @{$self->{messages}}, "Forbidden" );
                 }
             }
-        }
-        else {    # image
+        } else {    # image
 
         }
     }
@@ -1959,7 +1958,7 @@ sub new {
 }
 
 sub get_file {
-    my ( $self, $file ) = @_;
+    my ( $self, $file ) = (@_);
     if ( $self->{status} == 403 ) {
         return [
             403, [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
@@ -2009,10 +2008,10 @@ sub to_content {
     my $self    = shift;
     my $content = '';
     my $type    = 'text/plain';
-    if (   ( ( scalar $self->{errors} ) == 0 )
-        && ( ( keys $self->{data} ) == 0 ) )
+    if (   ( ( scalar @{$self->{errors}} ) == 0 )
+        && ( ( keys %{$self->{data}} ) == 0 ) )
     {
-        $content = join( "\n", $self->{messages} );
+        $content = join( "\n", @{$self->{messages}} );
 
     }
     else {
@@ -2020,7 +2019,7 @@ sub to_content {
         $self->{status} = 500 if ( ( scalar $self->{errors} ) > 0 );
         $content = encode_json(
             {   status  => $self->{status},
-                message => join( "\n", $self->{messages} ),
+                message => join( "\n", @{$self->{messages}} ),
                 errors  => $self->{errors},
                 data    => $self->{data}
             }
@@ -2059,7 +2058,7 @@ sub call {
     }
     else {
         $self->{status} = 400;
-        push( $self->{messages}, "Bad Request" );
+        push( @{$self->{messages}}, "Bad Request" );
     }
 
 }
