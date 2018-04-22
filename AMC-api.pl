@@ -24,143 +24,49 @@ use Cwd;
 
 use Plack::Request;
 use Plack::Builder;
-use JSON;
+use Plack::App::File;
 
 use Api;
 
-my $home_dir = cwd;
-my $o_file   = '';
+my $dir = cwd;
 
-my %o = ();
-
-$o_file = $home_dir . "/cf.default.xml";
-
-# Read general options ...
-
-if ( -r $o_file ) {
-    %o = Api::pref_xx_lit($o_file);
-}
-
-my $base_url = $o{'api_url'};
-
-my $static = sub {
+my $img = sub {
     my $request = Plack::Request->new(shift);
-    my $json;
-    my $post   = $request->body_parameters->as_hashref;
-    my $data   = $post;
-    my @errors = ();
-    $data->{ip}          = $request->address;
-    $data->{remote_host} = $request->remote_host;
-    $data->{referer}     = $request->referer;
-    $json                = {
-        status  => 200,
-        message => 'success',
-        errors  => \@errors,
-        data    => $data
-    };
-
-    my $response = $request->new_response(200);
-    $response->content_type('application/json');
-    $response->content( encode_json($json) );
-
-    return $response->finalize;
+    my $api = Api->new( $dir, $request->address, $request->path_info );
+    Plack::App::File->new( file => $api->get_file() )->to_app;
 };
 
-my %ROUTING = (
-    '/'     => \&serve_root,
-    '/echo' => \&serve_echo,
-);
-
-my $app = sub {
+my $download = sub {
     my $request = Plack::Request->new(shift);
-    my $json;
-    my $post   = $request->body_parameters->as_hashref;
-    my $data   = $post;
-    my @errors = ();
-    $data->{ip}          = $request->address;
-    $data->{remote_host} = $request->remote_host;
-    $data->{referer}     = $request->referer;
-    $json                = {
-        status  => 200,
-        message => 'success',
-        errors  => \@errors,
-        data    => $data
-    };
+    my $path    = $request->path_info;
+    my $post    = $request->body_parameters->as_hashref;
+    my $api     = Api->new( $dir, $request->address, $post, $request->uploads );
 
-    my $response = $request->new_response(200);
-    $response->content_type('application/json');
-    $response->content( encode_json($json) );
-
-    return $response->finalize;
+    Plack::App::File->new( file => $api->get_file( $request->path_info ) )
+        ->to_app;
 };
-my $mw = sub {
-    my $app = shift;
-    sub {
-        my $env = shift;
-        $app->($env);
-    };
 
+my $process = sub {
+    my $env     = shift;
     my $request = Plack::Request->new($env);
-    my $json;
-    my $post   = $request->body_parameters->as_hashref;
-    my @errors = ();
-    if ( !defined $post->{apikey} ) {
-        @errors = ("No apikey");
-    }
-    else {
-        my $project_dir
-            = $o{'rep_projets'} . $request->address . "/" . $post->{apikey};
-        if (   ( ( !-d $project_dir ) && ( !defined $post->{globalkey} ) )
-            || ( $post->{globalkey} != $o{'api_secret'} ) )
-        {
-            @errors = ("Bad apikey");
-        }
-    }
+    my $path    = $request->path_info;
+    my $post    = $request->body_parameters->as_hashref;
+    my $api     = Api->new( $dir, $request->address, $post );
 
-    if ( $#errors == 0 ) {
-        my $route = $ROUTING{ $request->path_info };
-        if ($route) {
-            return $route->($env);
-        }
+    $api->call( $request->path_info ) if ( $api->status() != 403 );
 
-        $data->{ip}          = $request->address;
-        $data->{remote_host} = $request->remote_host;
-        $data->{referer}     = $request->referer;
-        $json                = {
-            status  => 200,
-            message => 'success',
-            errors  => \@errors,
-            data    => $data
-        };
-    }
-    if ($#errors) {
-        $json = {
-            status  => 400,
-            message => 'error',
-            errors  => \@errors
-        } my $response = $request->new_response(400);
-        $response->content_type('application/json');
-        $response->content( encode_json($json) );
-    }
-    else {
-
-    }
-    my $response = $request->new_response(200);
-    $response->content_type('application/json');
-    $response->content( encode_json($json) );
+    my ($status, $type, $lenght, $content) = $api->to_content;
+    my $response = $request->new_response( $status );
+    $response->content_type($type);
+    $response->content_length($length);
+    $response->content( $content );
 
     return $response->finalize;
 };
 
 builder {
-    mount $base_url. "/quiz"        => $app;
-    mount $base_url. "/document"    => $app;
-    mount $base_url. "/sheet"       => $app;
-    mount $base_url. "/association" => $app;
-    mount $base_url. "/grading"     => $app;
-    mount $base_url. "/annotation"  => $app;
-    mount $base_url. "/file"        => $app;
-    mount $base_url. "/image"       => $app;
-    mount $base_url. "/"            => $img;
+    mount $base_url. "/image"    => $img;
+    mount $base_url. "/download" => $download;
+    mount $base_url. "/"         => $process;
 }
 

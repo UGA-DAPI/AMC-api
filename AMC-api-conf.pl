@@ -20,7 +20,6 @@
 use strict;
 use warnings;
 
-
 use Getopt::Long;
 
 use POSIX qw/strftime/;
@@ -48,10 +47,10 @@ my $debug           = 0;
 my $debug_file      = '';
 my $show_secret     = 0;
 my $generate_secret = 0;
-my $home_dir        = cwd;
+my $dir             = cwd;
 my $api_url         = '/';
 
-my $api = Api->new($home_dir);
+my $api = Api->new($dir);
 
 sub promptUser {
 
@@ -85,22 +84,23 @@ GetOptions(
 # Gets system encoding
 my $encodage_systeme = langinfo( CODESET() );
 
-my $secret = $o{'api_secret'};
+my $secret = $api->get_config('api_secret');
 if ($generate_secret) {
     $secret = join( '', map( sprintf( q|%X|, rand(16) ), 1 .. 32 ) );
-    $api->{config}->set( 'general:api_secret', $secret );
+    $api->set_config( 'general:api_secret', $secret );
 }
 if ($show_secret) {
     print( "secret :", $secret );
 }
 else {
-    $api_url = $o{'api_url'} if ( defined $o{'api_url'} );
+    $api_url = $api->get_config('api_url')
+        if ( defined $api->get_config('api_url') );
     $api_url = promptUser( "Api url:", $api_url );
-    $api->{config}->set( 'general:api_url', $api_url );
+    $api->set( 'general:api_url', $api_url );
     if ($generate_secret) {
         print( "Secret :", $secret );
     }
 
 }
-$api->{config}->save();
+
 

@@ -50,12 +50,15 @@ use Module::Load::Conditional qw/check_install/;
 use AMC::Path;
 use AMC::Basic;
 use AMC::State;
-use AMC::Config;
 use AMC::Data;
 use AMC::DataModule::capture ':zone';
 use AMC::DataModule::report ':const';
 use AMC::Scoring;
+
+use Config;
 use CommandeApi;
+use JSON;
+use MIME::Base64 qw(decode_base64);
 
 use utf8;
 
@@ -115,24 +118,6 @@ if ($debug_file) {
 
 if ($debug) {
     set_debug_mode($debug);
-}
-
-sub new {
-    my $class = shift;
-    my ( $dir, $project_dir ) = @_;
-    my $self = { status => '', errors => (), messages => (), data => {} };
-    $self->{config} = AMC::Config::new(
-        shortcuts => AMC::Path::new( home_dir => $dir ),
-        home_dir  => $dir,
-        o_dir     => $dir,
-    );
-    if ( defined($project_dir) ) {
-        $self->{projet}->{name} = $project_dir;
-        $self->{config}->{shortcuts}->set( project_name => $proj );
-        $self->{config}->open_project($proj);
-    }
-    bless $self, $class;
-    return $self;
 }
 
 sub bon_encodage {
@@ -239,14 +224,14 @@ sub exporte {
             if ( -f $output ) {
 
                 # shows export messages
-                
-                    $c->erreurs();    #error
-                    $c->warning();    #error
-                
+
+                $c->erreurs();    #error
+                $c->warning();    #error
 
             }
             else {
-                print( __"Export to %s did not work: file not created...",$output );    #error
+                print( __"Export to %s did not work: file not created...",
+                    $output );    #error
             }
         }
     );
@@ -267,9 +252,10 @@ sub commande {
 }
 
 sub doc_maj {
-    my ($self,sur) = @_;
+    my ( $self, sur ) = @_;
     if ( $self->{project}->{'_capture'}->n_pages_transaction() > 0 ) {
-        push ($self->{messages},
+        push(
+            $self->{messages},
             __( "Papers analysis was already made on the basis of the current working documents."
                 )
                 . " "
@@ -289,7 +275,8 @@ sub doc_maj {
     $self->{project}->{_layout}->end_transaction('DMAJ');
     if ( $pc > 0 ) {
         if ( !$sur ) {
-            push ($self->{messages},
+            push(
+                $self->{messages},
                 __( "Layouts are already calculated for the current documents."
                     )
                     . " "
@@ -339,8 +326,8 @@ sub doc_maj {
         $message
             .= __("Install these components on your system and try again.");
 
-        push ($self->{errors},$message);
-        $self->{status} =412;
+        push( $self->{errors}, $message );
+        $self->{status} = 412;
 
         return (0);
     }
@@ -462,7 +449,7 @@ sub doc_maj {
                         "Use LaTeX editor or latex command for a precise diagnosis."
                         ) if ( $self->{config}->get('filter') eq 'latex' );
 
-                    push ($self->{errors},$message);
+                    push( $self->{errors}, $message );
                     $self->{status} = 412;
 
                 }
@@ -508,7 +495,8 @@ sub doc_maj {
                 if ( ( $ensemble || $c->variable('insidebox') )
                     && $self->{config}->get('seuil') < 0.4 )
                 {
-                    push ($self->{messages},
+                    push(
+                        $self->{messages},
                         (   $ensemble
                             ? __(
                                 "Your question has a separate answers sheet.")
@@ -519,8 +507,8 @@ sub doc_maj {
                             : __(
                                 "Your question is set to present labels inside the boxes to be ticked."
                             )
-                        )
-                        . " "
+                            )
+                            . " "
 
 # TRANSLATORS: Here, %s will be replaced with the translation of "darkness threshold".
                             . __(
@@ -567,7 +555,10 @@ sub sujet_impressions_ok {
     if ( !@e ) {
 
         # No page selected:
-        push ($self->{messages}, __("You did not select any exam to print...") );
+        push(
+            $self->{messages},
+            __("You did not select any exam to print...")
+        );
         return ();
     }
 
@@ -593,7 +584,8 @@ sub sujet_impressions_ok {
                 # This looks strange: a few sheets printed, a few sheets
                 # generated, and photocopy mode not selected yet. Ask the
                 # user if he wants to select this mode now.
-                push ($self->{messages},
+                push(
+                    $self->{messages},
                     __("You selected only a few sheets to print.") . "\n"
                         . "<b>"
                         . __(
@@ -615,7 +607,9 @@ sub sujet_impressions_ok {
         # This options needs pdftk!
         if ( $self->{config}->get('print_extract_with') ne 'pdftk' ) {
             if ( commande_accessible('pdftk') ) {
-                push ($self->{messages},
+                push(
+                    $self->{messages},
+
 # TRANSLATORS: the two %s will be replaced by the translations of "Answer sheet first" and "Extracting method".
                     sprintf(
                         __( "You selected the '%s' option, that uses 'pdftk', so the %s has been set to 'pdftk' for you."
@@ -628,7 +622,8 @@ sub sujet_impressions_ok {
                 $self->{config}->set( "print_extract_with", 'pdftk' );
             }
             else {
-                push ($self->{messages},
+                push(
+                    $self->{messages},
                     sprintf(
                         __( "You selected the '%s' option, but this option needs 'pdftk' to be installed on your system. Please install it and try again."
                         ),
@@ -745,7 +740,8 @@ sub calcule_mep {
     if ( $self->{config}->get('doc_setting') !~ /\.xy$/ ) {
 
         # OLD STYLE WORKING DOCUMENTS... Not supported anymore: update!
-        push ($self->{messages},(
+        push(
+            $self->{messages},
             __( "Working documents are in an old format, which is not supported anymore."
                 )
                 . " <b>"
@@ -782,7 +778,8 @@ sub calcule_mep {
                 if ( $c < 1 ) {
 
                     # avertissement...
-                    push ($self->{errors},
+                    push(
+                        $self->{errors},
                         __("No layout detected.") . " "
                             . __(
                             "<b>Don't go through the examination</b> before fixing this problem, otherwise you won't be able to use AMC for correction."
@@ -935,9 +932,12 @@ sub valide_liste {
     if ($err) {
 
         if ( !$oo{'noinfo'} ) {
-            push ($self->{errors},
-                sprintf( __ "Unsuitable names file: %d errors, first on line %d.",
-                    $err, $errlig )
+            push(
+                $self->{errors},
+                sprintf(
+                    __ "Unsuitable names file: %d errors, first on line %d.",
+                    $err, $errlig
+                )
             );
             $self->{status} = 412;
         }
@@ -947,11 +947,14 @@ sub valide_liste {
         my $e = $self->{project}->{_students_list}->problem('ID.empty');
         if ( $e > 0 ) {
             debug "NamesFile: $e empty IDs";
-            push ($self->{messages}, sprintf( __
-                    "Found %d empty names in names file <i>%s</i>. Check that <b>name</b> or <b>surname</b> column is present, and always filled.",
-                $e, $fl )
-                . " "
-                . __ "Edit the names file to correct it, and re-read.");
+            push(
+                $self->{messages},
+                sprintf( __
+                        "Found %d empty names in names file <i>%s</i>. Check that <b>name</b> or <b>surname</b> column is present, and always filled.",
+                    $e, $fl )
+                    . " "
+                    . __ "Edit the names file to correct it, and re-read."
+            );
         }
         else {
             my $d = $self->{project}->{_students_list}->problem('ID.dup');
@@ -960,13 +963,16 @@ sub valide_liste {
                 if ( $#{$d} > 8 ) {
                     @$d = ( @{$d}[ 0 .. 8 ], '(and more)' );
                 }
-                push ($self->{messages},sprintf(
-                    __
-                        "Found duplicate names: <i>%s</i>. Check that all names are different.",
-                    join( ', ', @$d )
-                    )
-                    . " "
-                    . __ "Edit the names file to correct it, and re-read.");
+                push(
+                    $self->{messages},
+                    sprintf(
+                        __
+                            "Found duplicate names: <i>%s</i>. Check that all names are different.",
+                        join( ', ', @$d )
+                        )
+                        . " "
+                        . __ "Edit the names file to correct it, and re-read."
+                );
 
             }
         }
@@ -1010,11 +1016,12 @@ sub associe {
     }
     else {
 
-        push ($self->{messages}, 
+        push(
+            $self->{messages},
             sprintf(
-            __
-                "Before associating names to papers, you must choose a students list file in paragraph \"%s\".",
-            __ "Students identification"
+                __
+                    "Before associating names to papers, you must choose a students list file in paragraph \"%s\".",
+                __ "Students identification"
             )
         );
 
@@ -1069,28 +1076,28 @@ sub assoc_resultat {
     my ( $auto, $man, $both ) = $self->{project}->{'_association'}->counts();
     $self->{project}->{'_association'}->end_transaction('ARCC');
 
-    push ($self->{messages},
+    push(
+        $self->{messages},
         sprintf(
-        __("Automatic association completed: %d students recognized."),
-        $auto
-        )
-        .
+            __("Automatic association completed: %d students recognized."),
+            $auto
+            )
+            .
 
 # TRANSLATORS: Here %s and %s will be replaced with two parameters names: "Primary key from this list" and "Code name for automatic association".
-        (
-        $auto == 0
-        ? "\n<b>"
-            . sprintf(
-            __("Please check \"%s\" and \"%s\" values and try again."),
-            __("Primary key from this list"),
-            __("Code name for automatic association")
-            )
+            (
+            $auto == 0
+            ? "\n<b>"
+                . sprintf(
+                __("Please check \"%s\" and \"%s\" values and try again."),
+                __("Primary key from this list"),
+                __("Code name for automatic association")
+                )
 
-        : ""
-        )
+            : ""
+            )
     );
 }
-
 
 sub noter {
     my $self = shift;
@@ -1191,7 +1198,7 @@ sub noter_calcul {
         'progres.id' => 'notation',
         'fin'        => sub {
             my ( $c, %data ) = @_;
-            push ($self->{messages}, __ "Grading has been completed" )
+            push( $self->{messages}, __ "Grading has been completed" )
                 if ( !$data{cancelled} );
             $self->noter_resultat();
         },
@@ -1207,7 +1214,7 @@ sub noter_resultat {
         $self->{data}->{mean} = sprintf( "%.2f", $avg );
     }
     else {
-        push ($self->{messages}, __("No marks computed") );
+        push( $self->{messages}, __("No marks computed") );
     }
 
     my @codes     = $self->{project}->{'_scoring'}->codes;
@@ -1243,8 +1250,8 @@ sub assoc_state {
                 "All completed answer sheets are associated with a student name";
         }
     }
-    push ($self->{messages}, $t);
-    
+    push( $self->{messages}, $t );
+
 }
 
 sub opt_symbole {
@@ -1357,8 +1364,8 @@ sub annote_copies {
         'fin' => sub {
             my ( $c, %data );
 
-         push ($self->{messages},__"Annotations have been completed")
-            if ( !$data{cancelled} );
+            push( $self->{messages}, __ "Annotations have been completed" )
+                if ( !$data{cancelled} );
         },
     );
 }
@@ -1376,9 +1383,11 @@ sub detecte_documents {
         'question' );
     $self->check_document( $self->{config}->get_absolute('doc_solution'),
         'solution' );
-    $self->check_document( $self->{config}->get_absolute('doc_indiv_solution'),
+    $self->check_document(
+        $self->{config}->get_absolute('doc_indiv_solution'),
         'indiv_solution' );
-    $self->check_document( $self->{config}->get_absolute('doc_catalog'), 'catalog' );
+    $self->check_document( $self->{config}->get_absolute('doc_catalog'),
+        'catalog' );
     my $s = file_maj( map { $self->{config}->get_absolute( 'doc_' . $_ ) }
             (qw/question setting/) );
     if ( $s eq 'UNREADABLE' ) {
@@ -1391,7 +1400,7 @@ sub detecte_documents {
         $s = __("Working documents last update:") . " " . $s;
     }
 
-   push ($self->{messages},$s);
+    push( $self->{messages}, $s );
 }
 
 sub detecte_mep {
@@ -1421,7 +1430,7 @@ sub detecte_mep {
         }
     }
 
-    push ($self->{messages},$s);
+    push( $self->{messages}, $s );
 }
 
 my %defect_text = (
@@ -1481,7 +1490,7 @@ sub mep_warnings {
         return ();
     }
 
-    push ($self->{messages},$m);
+    push( $self->{messages}, $m );
 
 }
 
@@ -1607,7 +1616,7 @@ sub detecte_analyse {
 
     }
 
-    push ($self->{messages},$tt);
+    push( $self->{messages}, $tt );
 
     if ( $failed_nb <= 0 ) {
         if ( $r{'complete'} ) {
@@ -1625,7 +1634,7 @@ sub detecte_analyse {
 
     }
 
-    push ($self->{messages},$tt);
+    push( $self->{messages}, $tt );
 
     return ( \%r );
 }
@@ -1647,9 +1656,12 @@ sub show_missing_pages {
             . pageids_string( $p->{'student'}, $p->{'page'}, $p->{'copy'} );
     }
 
-    push ($self->{messages},    __("Pages that miss data capture to complete students sheets:")
+    push(
+        $self->{messages},
+        __("Pages that miss data capture to complete students sheets:")
             . "</b>"
-            . $l );
+            . $l
+    );
 }
 
 sub update_unrecognized {
@@ -1670,7 +1682,7 @@ sub update_unrecognized {
         my $preproc_file
             = $self->{config}->get_absolute('%PROJET/cr/diagnostic') . "/"
             . $scan_n . ".png";
-        push ($self->{data},($f, $ff->{'filename'},$preproc_file));
+        push( $self->{data}, ( $f, $ff->{'filename'}, $preproc_file ) );
     }
 }
 
@@ -1687,7 +1699,12 @@ sub unrecognized_delete {
     $self->detecte_analyse();
     $self->{project}->{'_capture'}->end_transaction('rmUN');
 }
+sub set_source_tex {
+    my ($importe)=@_;
 
+    importe_source() if($importe);
+    valide_source_tex();
+}
 sub valide_source_tex {
     my $self = shift;
     debug "* valide_source_tex";
@@ -1747,7 +1764,7 @@ sub unzip_to_temp {
 sub valide_projet {
     my $self = shift;
 
-    #set_source_tex();
+    $self->set_source_tex();
 
     $self->{project}->{'_data'}
         = AMC::Data->new( $self->{config}->get_absolute('data'),
@@ -1768,62 +1785,214 @@ sub valide_projet {
 
 }
 
-sub projet_ouvre {
+sub create_project {
     my $self = shift;
-    my $proj = (@_);
-
-    my $new_source = 0;
-
-    # ouverture du projet $proj. Si $deja==1, alors il faut le creer
-
-    if ($proj) {
-        my ( $ok, $texsrc );
-        #cursor_wait;
-
-        # choix fichier latex si nouveau projet...
-        if ($deja) {
-            ( $ok, $texsrc ) = source_latex_choisir( 'nom' => $proj );
-            if ( !$ok ) {
-                #cursor_standard;
-                return (0);
-            }
-            if ( $ok == 1 ) {
-                $new_source = 1;
-            }
-            elsif ( $ok == 2 ) {
-                $deja = '';
-            }
+    # creation du repertoire et des sous-repertoires de projet
+    for my $sous ( '',
+        qw:cr cr/corrections cr/corrections/jpg cr/corrections/pdf cr/zooms cr/diagnostic data scans exports:
+        )
+    {
+        my $rep = $self->{config}->get('rep_projets') . "/$proj/$sous";
+        if ( !-x $rep ) {
+            debug "Creating directory $rep...";
+            mkdir($rep);
         }
-
-        #quitte_projet();
-
-        $self->{project}->{'nom'} = $proj;
-        $self->{config}->{shortcuts}->set( project_name => $proj );
-
-        $self->{config}->open_project($proj);
-        $self->{config}->set( 'project:texsrc', $texsrc ) if ($texsrc);
-
-        $self->{project}->{'nom'} = $proj;
-
-        # creation du repertoire et des sous-repertoires de projet
-
-        for my $sous ( '',
-            qw:cr cr/corrections cr/corrections/jpg cr/corrections/pdf cr/zooms cr/diagnostic data scans exports:
-            )
-        {
-            my $rep = $self->{config}->get('rep_projets') . "/$proj/$sous";
-            if ( !-x $rep ) {
-                debug "Creating directory $rep...";
-                mkdir($rep);
-            }
-        }
-
-        $self->valide_projet();
-
-        #set_source_tex(1) if($new_source);
-
-        return (1);
     }
+    $self->valide_projet();
+    return (1);
+
+}
+
+my %ROUTING = (
+    '/quiz/add'                     => 'create_project',
+    '/quiz/delete'                  => 'delete_project',
+    '/quiz/upload/latex'            => 'set_source',
+    '/quiz/upload/zip'              => 'set_source',
+    '/document/generate'            => 'doc_maj',
+    '/document/latex'               => 'get_source',
+    '/sheet/upload'                 => 'scan_upload',
+    '/sheet/delete'                 => '',
+    '/sheet/delete/unknown'         => '',
+    '/sheet/delete/unknown/student' => '',
+    '/sheet/'                       => '',
+    '/association/'                 => 'assoc_resultat',
+    '/association/associate/all'    => 'assoc_auto',
+    '/association/associate/one'    => 'associe',
+    '/grading'                      => 'export',
+    '/grading/grade'                => 'noter_calcul',
+    '/grading/stats'                => 'noter_resultat',
+    '/annotation/'                  => '',
+    '/annotation/annotate'          => 'annote_copies',
+    '/annotation/pdf'               => '',
+
+);
+
+my %PARAMS = (
+    "answer-first"             => 'options_impression/print_answersheet',
+    "arrondi"                  => 'note_arrondi',
+    "assoc-ncols"              => 'assoc_ncols',
+    "bw-threshold"             => 'bw_threshold',
+    "changes-only"             => 'change_only',
+    "compose"                  => 'regroupement_compose',
+    "csv-build-name"           => 'csv_build_name',
+    "dist-to-box"              => 'annote_ecart',
+    "embedded-format"          => 'embedded_format',
+    "embedded-jpeg-quality"    => 'embedded_jpeg_quality',
+    "embedded-max-size"        => 'embedded_max_size',
+    "encodage_interne"         => 'encodage_interne',
+    "extract-with"             => 'print_extract_with',
+    "filename-model"           => 'modele_regroupement',
+    "filter"                   => 'filter',
+    "font-name"                => 'annote_font_name',
+    "force-ascii"              => 'ascii_filenames',
+    "force-convert"            => "force_convert",
+    "global"                   => "global",
+    "grain"                    => 'note_grain',
+    "identifiant"              => 'csv_build_name',
+    "ignore-red"               => 'ignore_red',
+    "imprimante"               => 'imprimante',
+    "indicative"               => 'symboles_indicatives',
+    "line-width"               => 'symboles_trait',
+    "liste-key"                => 'liste_key',
+    "liste_key"                => 'liste_key',
+    "methode"                  => 'methode_impression',
+    "module"                   => 'module',
+    "multiple"                 => 'auto_capture_mode',
+    "n-copies"                 => 'nombre_copies',
+    "n-digits"                 => 'annote_chsign',
+    "n-procs"                  => 'n_procs',
+    "notemax"                  => 'note_max',
+    "notemin"                  => 'note_min',
+    "notenull"                 => 'note_null',
+    "notes-id"                 => 'assoc_code',
+    "plafond"                  => 'note_max_plafond',
+    "position"                 => 'annote_position',
+    "postcorrect-copy"         => 'postcorrect_copy',
+    "postcorrect-set-multiple" => 'postcorrect_set_multiple',
+    "postcorrect-student"      => 'postcorrect_student',
+    "pre-association"          => 'assoc_code',
+    "print-command"            => 'print_command_pdf',
+    "prop"                     => 'box_size_proportion',
+    "rtl"                      => 'annote_rtl',
+    "seuil"                    => 'seuil',
+    "seuil-up"                 => 'seuil_up',
+    "single-output"            => 'single_output',
+    "sort"                     => 'export_sort',
+    "split"                    => 'options_impression/print_answersheet',
+    "tol-marque"     => 'tolerance_marque_inf' . ',' . 'tolerance_marque_sup',
+    "try-three"      => 'try_three',
+    "useall"         => 'export_include_abs',
+    "vector-density" => 'vector_scan_density',
+    "verdict"        => 'verdict',
+    "verdict-question"           => 'verdict_q',
+    "verdict-question-cancelled" => 'verdict_qc'
+);
+my @POST = ( 'filecode', 'idnumber','students','file');
+
+sub new {
+    my $class = shift;
+    my ( $dir, $ip, $request, $uploads ) = @_;
+    my $self = { status => 200, errors => (), messages => (), data => () };
+    $self->{config} = AMC::Config::new(
+        shortcuts => AMC::Path::new( home_dir => $dir ),
+        home_dir  => $dir,
+        o_dir     => $dir,
+    );
+    my $base_url = $self->{config}->get('general:api_url');
+    if ( defined($ip) ) {    #not config script
+        if ( defined($request) ) {
+            if ( ref $request eq 'HASH' ) {
+                my $project_dir = $ip . ":" . $request->{apikey}
+                    if defined( $request->{apikey} );
+                my $globalkey = $request->{globalkey}
+                    if defined( $request->{globalkey} );
+            }
+            elsif ( $request
+                =~ /^\Q$base_url\E\/image\/([^\/]*)\/([^\.]*)\.(.*)$/ )
+            {
+                my $project_dir = $prefix . ":" . $1;
+                $self->{wanted_file} = "%PROJET/cr/" . $2 . ".jpg"
+                    if ( $3 eq 'jpg' );
+            }
+
+            if ( defined($project_dir) ) {
+                $self->{project}->{'nom'} = $project_dir;
+                $self->{config}->{shortcuts}
+                    ->set( project_name => $project_dir );
+                if ( -d $self->get_shortcut('%PROJET') ) {
+                    $self->{config}->open_project($project_dir);
+                    if defined( $request->{apikey} ) {
+                        my @config_key = values %PARAMS;
+                        my @cli_key    = keys %PARAMS;
+                        for my $k ( keys %{$request} ) {
+                            $self->set_config( $k, $request->{$k} )
+                                if ( defined $config_key[$k] );
+                            $self->set_config( $PARAMS{$k}, $request->{$k} )
+                                if ( defined $cli_key[$k] );
+                            $self->{$k} = $request->{$k} ) if ( defined $POST[$k] );
+
+                        }
+                        $self->{uploads} = $uploads ) if ( defined $uploads );
+                    }
+                }
+                elsif (
+                    defined($globalkey)
+                    && ( $globalkey eq
+                        $self->{config}->get('general:api_secret') )
+                    )
+                {
+                    $self->{status} = 404;
+                    push( $self->{messages}, "Not Found" );
+                }
+                else {
+                    $self->{status} = 403;
+                    push( $self->{messages}, "Forbidden" );
+                }
+            }
+        }
+        else {    # image
+
+        }
+    }
+    bless $self, $class;
+    return $self;
+}
+
+sub get_file {
+    my ( $self, $file ) = @_;
+    if ( $self->{status} == 403 ) {
+        return [
+            403, [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
+            ['forbidden']
+        ];
+    }
+    if ( defined($file) ) {    #download
+        my $base_url = $self->{config}->get('general:api_url');
+        if (   ( $file =~ /^\Q$base_url\E\/download\/(.*)$/ )
+            && ( -d $self->get_shortcut( "%PROJET/" . $1 ) ) )
+        {
+            return $self->get_shortcut( $self->{wanted_file} );
+        }
+        else {
+            return [
+                404,
+                [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
+                ['not found']
+            ];
+        }
+    }
+    elsif ( defined( $self->{wanted_file} )
+        && ( -d $self->get_shortcut( $self->{wanted_file} ) ) )
+    {    #image
+        return $self->get_shortcut( $self->{wanted_file} );
+    }
+    else {
+        return [
+            404, [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
+            ['not found']
+        ];
+    }
+
 }
 
 sub DESTROY {
@@ -1834,4 +2003,63 @@ sub DESTROY {
 
     }
     return (1);
+}
+
+sub to_content {
+    my $self    = shift;
+    my $content = '';
+    my $type    = 'text/plain';
+    if (   ( ( scalar $self->{errors} ) == 0 )
+        && ( ( keys $self->{data} ) == 0 ) )
+    {
+        $content = join( "\n", $self->{messages} );
+
+    }
+    else {
+        $type    = 'application/json';
+        $self->{status} = 500 if ( ( scalar $self->{errors} ) > 0 );
+        $content = encode_json(
+            {   status  => $self->{status},
+                message => join( "\n", $self->{messages} ),
+                errors  => $self->{errors},
+                data    => $self->{data}
+            }
+        );
+    }
+    return ( $self->{status}, $type, length($content), $content );
+}
+
+sub status {
+    my $self = shift;
+    return $self->{status};
+}
+
+sub get_config {
+    my ( $self, $key ) = @_;
+    return $self->{config}->get($key);
+}
+
+sub set_config {
+    my ( $self, $key, $value ) = @_;
+    $self->{config}->set( 'project:' . $key, $value );
+}
+
+sub get_shortcut {
+    my ( $self, $shortcut ) = @_;
+    return ( $self->{config}->{shortcuts}->absolu($shortcut) );
+}
+
+sub call {
+    my ( $self, $action ) = @_;
+    my $base_url = $self->{config}->get('general:api_url');
+    $action =~ /^\Q$base_url\E(.*)$/;
+    my $method = $ROUTING{$1};
+    if ( $self->can($method) ) {
+        $self->$method;
+    }
+    else {
+        $self->{status} = 400;
+        push( $self->{messages}, "Bad Request" );
+    }
+
 }
