@@ -1898,7 +1898,7 @@ sub new {
     my $class = shift;
     my ( $dir, $ip, $request, $uploads ) = @_;
     my $self = { status => 200, errors => (), messages => (), data => () };
-    $self->{config} = AMC::Config::new(
+    $self->{config} = Config::new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
         o_dir     => $dir,
