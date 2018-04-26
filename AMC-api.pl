@@ -40,8 +40,7 @@ my $img = sub {
 
 my $download = sub {
     my $request = Plack::Request->new(shift);
-    my $post    = $request->body_parameters->as_hashref;
-    my $api  = AMC::Api->new( $dir, $request, $post );
+    my $api  = AMC::Api->new( $dir, $request);
     my $file = $api->get_file( $request->path_info );
     $api = undef;
     Plack::App::File->new( file => $file )->to_app;
@@ -50,8 +49,7 @@ my $download = sub {
 my $process = sub {
     my $env     = shift;
     my $request = Plack::Request->new($env);
-    my $post    = $request->body_parameters->as_hashref;
-    my $api     = AMC::Api->new( $dir, $request, $post );
+    my $api     = AMC::Api->new( $dir, $request);
 
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 

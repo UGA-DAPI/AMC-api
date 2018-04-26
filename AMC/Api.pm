@@ -2670,7 +2670,8 @@ my @POST = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
 
 sub new {
     my $class = shift;
-    my ( $dir, $request, $post ) = @_;
+    my ( $dir, $request ) = @_;
+    my $post = $request->body_parameters->has_hashref;
     my $self = { status => 200, errors => [], messages => [], data => {} };
     $self->{config} = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
@@ -2688,7 +2689,7 @@ sub new {
                 if defined( $request->{globalkey} );
         }
         elsif ( $request->path_info
-            =~ m|^\Q$base_url\E/image/([^/]*)/([^\.]*)\.(.*)$| )
+            =~ m|^([^/]*)/([^\.]*)\.(.*)$| )
         {
             my $project_dir = $request->address . ":" . $1;
             $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
@@ -2985,10 +2986,10 @@ sub get_relatif {
 sub call {
     my ( $self, $action ) = @_;
     my $base_url = $self->{config}->get('api_url');
-    #$action =~ m|^$base_url(.*)/?$|;
-    $self->{action} =$1;
+    $action =~ s|/\z||;
+    $self->{action} =$action;
     my $method = $ROUTING{$action};
-    if ( defined $method ) {
+    if ( $self->can($method) ) {
         $self->$method;
     }
     else {
