@@ -57,10 +57,16 @@ my $process = sub {
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 
     my ( $status, $type, $length, $content ) = $api->to_content;
-    my $response = $request->new_response($status);
-    $response->content_type($type);
-    $response->content_length($length);
-    $response->content($content);
+    my $response = $request->new_response();
+    if (my $url = $api->redirect())
+    {
+        $response->redirect($url);
+    } else {
+        $response->status($status);
+        $response->content_type($type);
+        $response->content_length($length);
+        $response->content($content);
+    }
 
     $api = undef;
     return $response->finalize;

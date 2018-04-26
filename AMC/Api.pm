@@ -59,6 +59,7 @@ use AMC::Config;
 use AMC::CommandeApi;
 use JSON;
 use MIME::Base64 qw(decode_base64);
+use URI;
 
 use utf8;
 
@@ -191,10 +192,10 @@ sub exporte {
     }
     my $type = "AMC::Export::register::$format"->type();
     my $code = $self->{config}->get('code_examen');
-    $code = $self->{project}->{'nom'} if ( !$code );
+    $code = 'grades' if ( !$code );
     utf8::encode($code);
     my $output
-        = $self->{config}->get_absolute( '%PROJET/exports/' . $code . $ext );
+        = $self->{config}->get_shortcut( '%PROJET/exports/' . $code . $ext );
     my @needs_module = ();
 
     my %ofc = "AMC::Export::register::$format"
@@ -1403,6 +1404,7 @@ sub noter_resultat {
     my $self = shift;
     $self->{project}->{'_scoring'}->begin_read_transaction('MARK');
     my $avg = $self->{project}->{'_scoring'}->average_mark;
+    my @marks = $self->{project}->{'_scoring'}->marks;
 
     if ( defined($avg) ) {
         $self->{data}->{mean} = sprintf( "%.2f", $avg );
@@ -1411,12 +1413,21 @@ sub noter_resultat {
         push( @{ $self->{messages} }, __("No marks computed") );
     }
 
-    my @codes     = $self->{project}->{'_scoring'}->codes;
-    my $pre_assoc = $self->{project}->{'_layout'}->pre_association();
-
+    $self->{data}->{workforce} = $self->{project}->{'_scoring'}->marksCount;
     $self->{project}->{'_scoring'}->end_transaction('MARK');
 
-    debug "Codes : " . join( ',', @codes );
+    my @sortmarks = sort  {$a <=> $b} @marks;
+    my $mid = int @sortmarks/2;
+    if (@sortmarks % 2) {
+        $self->{data}->{median} = $sortmarks[ $mid ];
+    } else {
+        $self->{data}->{median} = ($sortmarks[$mid-1] + $sortmarks[$mid])/2;
+    } 
+    my %counts;
+    ++$counts{$_} for @marks;
+    my @mode = sort { $counts{$a} <=> $counts{$b} } keys %counts;
+    $self->{data}->{mode} = $mode[0];
+    $self->{data}->{range} = $sortmarks[0]. '-'. $sortmarks[-1]; 
 
 }
 
@@ -2584,7 +2595,8 @@ my %ROUTING = (
     '/association/'                 => 'select_students',
     '/association/associate/all'    => 'associe_auto',
     '/association/associate/one'    => 'associe',
-    '/grading'                      => 'export_csv_ods',
+    '/grading'                      => 'get_export',
+    '/grading/generate'             => 'export_csv_ods',
     '/grading/json'                 => 'export_json',
     '/grading/grade'                => 'noter',
     '/grading/stats'                => 'noter_resultat',
@@ -2785,6 +2797,23 @@ sub get_doc {
         if ( -f $self->get_shortcut('%PROJET/documents.zip') );
 }
 
+sub get_export {
+    my $self = shift;
+    for (qw/CSV ods/) {
+        my $ext     = "AMC::Export::register::$format"->extension();
+        if ( !$ext ) {
+            $ext = lc($format);
+        }
+        my $code = $self->{config}->get('code_examen');
+        $code = 'grades' if ( !$code );
+        utf8::encode($code);
+        my $f = $self->{config}->get_shortcut( '%PROJET/exports/' . $code . $ext );
+        self->{data}->{$ext}
+            = $self->get_url( '/exports/' . $code . $ext ); )
+            if ( -f $f );
+    }
+}
+
 sub generate_zip {
     my $self    = shift;
     my $zipfile = $config->get_shortcut('%PROJET') . '/documents.zip';
@@ -2822,7 +2851,7 @@ sub export_csv_ods {
 
     for (qw/CSV ods/) {
         $self->{config}->set( 'project:format_export', $_ );
-        $self->export;
+        $self->exporte;
     }
 
 }
@@ -2835,7 +2864,7 @@ sub get_source {
     $self->{data}->{url} = $url;
 }
 
-sub get_annotaion {
+sub get_annotation {
     my $self = shift;
     $self->{project}->{'_capture'}->begin_read_transaction('UNRC');
     my $failed
@@ -2898,6 +2927,16 @@ sub to_content {
     }
     return ( $self->{status}, $type, length($content), $content );
 }
+sub redirect {
+    my $self    = shift;
+
+    return (0) if (!defined $self->{url_return});
+    my $uri = URI->new( $self->{url_return} ):
+    my $action = $self->{action} =~s/\//_/g
+    $uri->query_form(action =>$action, status =>$self->{status}, message=>join( "\n", @{ $self->{messages} });
+    
+    return $uri->as_string;
+}
 
 sub status {
     my $self = shift;
@@ -2943,7 +2982,8 @@ sub call {
     my ( $self, $action ) = @_;
     my $base_url = $self->{config}->get('general:api_url');
     $action =~ /^\Q$base_url\E(.*)$/;
-    my $method = $ROUTING{$1};
+    $self->{action} =$1;
+    my $method = $ROUTING{$self->{action}};
     if ( $self->can($method) ) {
         $self->$method;
     }
