@@ -29,11 +29,11 @@ use Plack::App::File;
 use AMC::Api;
 
 my $dir    = cwd;
-my $config = Api->get_api_url();
+my $config = AMC::Api->get_api_url();
 
 my $img = sub {
     my $request = Plack::Request->new(shift);
-    my $api     = Api->new( $dir, $request );
+    my $api     = AMC::Api->new( $dir, $request );
     my $file    = $api->get_file();
     $api = undef;
     Plack::App::File->new( file => $file )->to_app;
@@ -42,7 +42,7 @@ my $img = sub {
 my $download = sub {
     my $request = Plack::Request->new(shift);
     my $post    = $request->body_parameters->as_hashref;
-    my $api  = Api->new( $dir, $request, $post );
+    my $api  = AMC::Api->new( $dir, $request, $post );
     my $file = $api->get_file( $request->path_info );
     $api = undef;
     Plack::App::File->new( file => $file )->to_app;
@@ -52,7 +52,7 @@ my $process = sub {
     my $env     = shift;
     my $request = Plack::Request->new($env);
     my $post    = $request->body_parameters->as_hashref;
-    my $api     = Api->new( $dir, $request, $post );
+    my $api     = AMC::Api->new( $dir, $request, $post );
 
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 
