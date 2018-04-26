@@ -2962,7 +2962,7 @@ sub get_api_url {
         home_dir  => $dir,
         o_dir     => $dir
     );
-    return $self->{config}->get('api_url');
+    return $config->get('api_url');
 }
 
 sub set_config {

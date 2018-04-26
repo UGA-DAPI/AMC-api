@@ -29,8 +29,7 @@ use Plack::App::File;
 use AMC::Api;
 
 my $dir    = cwd;
-my $config = AMC::Api->get_api_url();
-
+my $config = AMC::Api::get_api_url($dir);
 my $img = sub {
     my $request = Plack::Request->new(shift);
     my $api     = AMC::Api->new( $dir, $request );
