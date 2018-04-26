@@ -23,7 +23,7 @@ package AMC::Api;
 BEGIN {
     our $VERSION = 1.0;
 }
-
+use Data::Dumper;
 use XML::Simple;
 use IO::File;
 use IO::Select;
@@ -2666,22 +2666,24 @@ my %PARAMS = (
     "verdict-question"           => 'verdict_q',
     "verdict-question-cancelled" => 'verdict_qc'
 );
-my @POST = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
+my @POSTS = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
 
 sub new {
     my $class = shift;
     my ( $dir, $request ) = @_;
-    my $post = $request->body_parameters->has_hashref;
+    my $post = $request->body_parameters->as_hashref;
+    my $project_dir = $request->address;
     my $self = { status => 200, errors => [], messages => [], data => {} };
     $self->{config} = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
         o_dir     => $dir,
     );
+    bless $self, $class;
     my $base_url = $self->{config}->get('api_url');
     if ( defined($request) ) {    #not config script
         if ( defined($post) ) {
-            my $project_dir = $request->address . ":" . $post->{apikey}
+            $project_dir .= ":" . $post->{apikey}
                 if defined( $post->{apikey} );
             $self->{globalkey}
                 = $post->{globalkey} eq
@@ -2691,7 +2693,7 @@ sub new {
         elsif ( $request->path_info
             =~ m|^([^/]*)/([^\.]*)\.(.*)$| )
         {
-            my $project_dir = $request->address . ":" . $1;
+            $project_dir .= ":" . $1;
             $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
                 if ( $3 eq 'jpg' || $3 eq 'png' );
         }
@@ -2710,7 +2712,7 @@ sub new {
                             $post->{$k} )
                             if ( defined $cli_key[$k] );
                         $self->{$k} = $post->{$k}
-                            if ( defined $POST[$k] );
+                            if ( defined $POSTS[$k] );
 
                     }
                     $self->{uploads} = $request->uploads
@@ -2734,7 +2736,6 @@ sub new {
                 push( @{ $self->{messages} }, "Not Found" );
 	}
     }
-    bless $self, $class;
     return $self;
 }
 
