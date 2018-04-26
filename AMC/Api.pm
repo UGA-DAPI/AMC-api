@@ -296,7 +296,7 @@ sub commande {
 
 sub remove_project {
     my $self  = shift;
-    my $force = @_;
+    my ($force) = @_;
     if ( $self->{globalkey} ) {
         push(
             @{ $self->{messages} },
@@ -2956,7 +2956,7 @@ sub sheet_delete {
 }
 
 sub get_api_url {
-    my $dir    = @_;
+    my ($dir)    = @_;
     my $config = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
