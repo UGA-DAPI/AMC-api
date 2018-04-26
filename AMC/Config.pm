@@ -54,6 +54,7 @@ sub new {
     for my $k ( keys %o ) {
         $self->{$k} = $o{$k} if ( defined( $self->{$k} ) );
     }
+    bless $self, $class;
 
     if ( !$empty ) {
         $self->defaults();
@@ -61,7 +62,6 @@ sub new {
         $self->load_state();
         $self->load_profile();
     }
-    bless $self, $class;
     return ($self);
 }
 

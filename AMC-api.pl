@@ -26,7 +26,7 @@ use Plack::Request;
 use Plack::Builder;
 use Plack::App::File;
 
-use Api;
+use AMC::Api;
 
 my $dir    = cwd;
 my $config = Api->get_api_url();

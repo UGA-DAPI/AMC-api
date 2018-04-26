@@ -1489,7 +1489,7 @@ sub select_students {
             $idnumber = $auto;
             $type     = "auto";
         }
-        my $iter = (
+        my %iter = (
             filecode => studentids_string(@$sc),
             idnumber => $idnumber,
             type     => $type,
@@ -1497,7 +1497,7 @@ sub select_students {
                 "name-" . studentids_string_filename(@sc) . ".jpg"
             ),
         );
-        push @{ $self->{data} }, $iter;
+        push @{ $self->{data} }, %iter;
     }
     $self->{project}->{'_capture'}->end_transaction('gSLi');
 
@@ -2671,8 +2671,8 @@ my @POST = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
 sub new {
     my $class = shift;
     my ( $dir, $request, $post ) = @_;
-    my $self = { status => 200, errors => (), messages => (), data => () };
-    $self->{config} = Config->new(
+    my $self = { status => 200, errors => [], messages => [], data => [] };
+    $self->{config} = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
         o_dir     => $dir,
@@ -2789,11 +2789,11 @@ sub get_doc {
     my $self = shift;
     for (qw/question solution catalog/) {
         my $f = $self->get_absolute( 'doc_' . $_ );
-        self->{data}->{$_}
+        $self->{data}->{$_}
             = $self->get_url( $self->get_config( 'doc_' . $_ ) )
             if ( -f $f );
     }
-    self->{data}->{zip} = $config->get_url('documents.zip')
+    $self->{data}->{zip} = $config->get_url('documents.zip')
         if ( -f $self->get_shortcut('%PROJET/documents.zip') );
 }
 
@@ -2808,9 +2808,8 @@ sub get_export {
         $code = 'grades' if ( !$code );
         utf8::encode($code);
         my $f = $self->{config}->get_shortcut( '%PROJET/exports/' . $code . $ext );
-        self->{data}->{$ext}
-            = $self->get_url( '/exports/' . $code . $ext ); )
-            if ( -f $f );
+        $self->{data}->{$ext}
+            = $self->get_url( '/exports/' . $code . $ext ) if ( -f $f );
     }
 }
 
@@ -2900,6 +2899,8 @@ sub DESTROY {
 
         $self->{config}->close_project();
 
+    } else {
+        $self->{config}->save();
     }
     return (1);
 }
@@ -2931,9 +2932,10 @@ sub redirect {
     my $self    = shift;
 
     return (0) if (!defined $self->{url_return});
-    my $uri = URI->new( $self->{url_return} ):
-    my $action = $self->{action} =~s/\//_/g
-    $uri->query_form(action =>$action, status =>$self->{status}, message=>join( "\n", @{ $self->{messages} });
+    my $uri = URI->new( $self->{url_return} );
+    my $action = $self->{action};
+    $action =~s/\//_/g;
+    $uri->query_form(action =>$action, status =>$self->{status}, message=>join( "\n", @{ $self->{messages} }));
     
     return $uri->as_string;
 }
