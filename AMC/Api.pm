@@ -2677,7 +2677,7 @@ sub new {
         home_dir  => $dir,
         o_dir     => $dir,
     );
-    my $base_url = $self->{config}->get('global:api_url');
+    my $base_url = $self->{config}->get('api_url');
     if ( defined($request) ) {    #not config script
         if ( defined($post) ) {
             my $project_dir = $request->address . ":" . $post->{apikey}
@@ -2688,7 +2688,7 @@ sub new {
                 if defined( $request->{globalkey} );
         }
         elsif ( $request->path_info
-            =~ /^\Q$base_url\E\/image\/([^\/]*)\/([^\.]*)\.(.*)$/ )
+            =~ m|^\Q$base_url\E/image/([^/]*)/([^\.]*)\.(.*)$| )
         {
             my $project_dir = $request->address . ":" . $1;
             $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
@@ -2728,7 +2728,10 @@ sub new {
                 $self->{status} = 403;
                 push( @{ $self->{messages} }, "Forbidden" );
             }
-        }
+        }else{
+                $self->{status} = 404;
+                push( @{ $self->{messages} }, "Not Found" );
+	}
     }
     bless $self, $class;
     return $self;
@@ -2981,11 +2984,11 @@ sub get_relatif {
 
 sub call {
     my ( $self, $action ) = @_;
-    my $base_url = $self->{config}->get('global:api_url');
-    $action =~ /^\Q$base_url\E(.*)$/;
+    my $base_url = $self->{config}->get('api_url');
+    #$action =~ m|^$base_url(.*)/?$|;
     $self->{action} =$1;
-    my $method = $ROUTING{$self->{action}};
-    if ( $self->can($method) ) {
+    my $method = $ROUTING{$action};
+    if ( defined $method ) {
         $self->$method;
     }
     else {
