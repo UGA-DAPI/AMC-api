@@ -28,45 +28,47 @@ use Plack::App::File;
 
 use Api;
 
-my $dir = cwd;
+my $dir    = cwd;
+my $config = Api->get_api_url();
 
 my $img = sub {
     my $request = Plack::Request->new(shift);
-    my $api = Api->new( $dir, $request->address, $request->path_info );
-    Plack::App::File->new( file => $api->get_file() )->to_app;
+    my $api     = Api->new( $dir, $request );
+    my $file    = $api->get_file();
+    $api = undef;
+    Plack::App::File->new( file => $file )->to_app;
 };
 
 my $download = sub {
     my $request = Plack::Request->new(shift);
-    my $path    = $request->path_info;
     my $post    = $request->body_parameters->as_hashref;
-    my $api     = Api->new( $dir, $request->address, $post, $request->uploads );
-
-    Plack::App::File->new( file => $api->get_file( $request->path_info ) )
-        ->to_app;
+    my $api  = Api->new( $dir, $request, $post );
+    my $file = $api->get_file( $request->path_info );
+    $api = undef;
+    Plack::App::File->new( file => $file )->to_app;
 };
 
 my $process = sub {
     my $env     = shift;
     my $request = Plack::Request->new($env);
-    my $path    = $request->path_info;
     my $post    = $request->body_parameters->as_hashref;
-    my $api     = Api->new( $dir, $request->address, $post );
+    my $api     = Api->new( $dir, $request, $post );
 
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 
-    my ($status, $type, $lenght, $content) = $api->to_content;
-    my $response = $request->new_response( $status );
+    my ( $status, $type, $length, $content ) = $api->to_content;
+    my $response = $request->new_response($status);
     $response->content_type($type);
     $response->content_length($length);
-    $response->content( $content );
+    $response->content($content);
 
+    $api = undef;
     return $response->finalize;
 };
 
 builder {
-    mount $base_url. "/image"    => $img;
-    mount $base_url. "/download" => $download;
-    mount $base_url. "/"         => $process;
+    mount $config. "/image"    => $img;
+    mount $config. "/download" => $download;
+    mount $config. "/"         => $process;
 }
 

@@ -18,7 +18,7 @@
 # along with Auto-Multiple-Choice.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-package CommandeApi;
+package AMC::CommandeApi;
 
 use Encode;
 

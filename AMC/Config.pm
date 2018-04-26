@@ -18,9 +18,7 @@
 # along with Auto-Multiple-Choice.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-package Config;
-
-
+package AMC::Config;
 
 use AMC::Basic;
 use XML::Simple;
@@ -334,26 +332,24 @@ sub defaults {
     };
 
     $self->{project_default} = {
-        texsrc             => '',
-        data               => 'data',
-        cr                 => 'cr',
-        listeetudiants     => '',
-        notes              => 'notes.xml',
-        seuil              => '',
-        seuil_up           => '',
-        encodage_csv       => '',
-        encodage_liste     => '',
-        maj_bareme         => 1,
-        doc_question       => 'DOC-sujet.pdf',
-        doc_solution       => 'DOC-corrige.pdf',
-        doc_indiv_solution => 'DOC-indiv-solution.pdf',
-        doc_setting        => 'DOC-calage.xy',
-        doc_catalog        => 'DOC-catalog.pdf',
-        filter             => '',
-        filtered_source    => 'DOC-filtered.tex',
-        options_impression => {
-            repertoire        => 'impression',
-        },
+        texsrc               => '',
+        data                 => 'data',
+        cr                   => 'cr',
+        listeetudiants       => '',
+        notes                => 'notes.xml',
+        seuil                => '',
+        seuil_up             => '',
+        encodage_csv         => '',
+        encodage_liste       => '',
+        maj_bareme           => 1,
+        doc_question         => 'DOC-sujet.pdf',
+        doc_solution         => 'DOC-corrige.pdf',
+        doc_indiv_solution   => 'DOC-indiv-solution.pdf',
+        doc_setting          => 'DOC-calage.xy',
+        doc_catalog          => 'DOC-catalog.pdf',
+        filter               => '',
+        filtered_source      => 'DOC-filtered.tex',
+        options_impression   => { repertoire => 'impression', },
         modele_regroupement  => '',
         regroupement_compose => 0,
         regroupement_type    => 'STUDENTS',
@@ -556,8 +552,10 @@ sub unavailable_commands_keys {
     my ($self) = @_;
     my @uc = ();
 
-    for my $k ( grep {/_(viewer|editor|opener)$/}
-        keys( %{ $self->{global} } ) )
+    for my $k (
+        grep {/_(viewer|editor|opener)$/}
+        keys( %{ $self->{global} } )
+        )
     {
         my $nc = $self->{global}->{$k};
         $nc =~ s/^\s+//;

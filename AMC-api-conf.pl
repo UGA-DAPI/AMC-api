@@ -32,7 +32,7 @@ use Unicode::Normalize;
 use I18N::Langinfo qw(langinfo CODESET);
 use Locale::Language;
 
-use Api;
+use AMC::Api;
 
 use AMC::Basic;
 

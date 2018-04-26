@@ -18,7 +18,7 @@
 # along with Auto-Multiple-Choice.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-package Api;
+package AMC::Api;
 
 BEGIN {
     our $VERSION = 1.0;
@@ -55,8 +55,8 @@ use AMC::DataModule::capture ':zone';
 use AMC::DataModule::report ':const';
 use AMC::Scoring;
 
-use Config;
-use CommandeApi;
+use AMC::Config;
+use AMC::CommandeApi;
 use JSON;
 use MIME::Base64 qw(decode_base64);
 
@@ -120,6 +120,31 @@ if ($debug) {
     set_debug_mode($debug);
 }
 
+# Reads filter plugins list
+
+my @filter_modules = perl_module_search('AMC::Filter::register');
+for my $m (@filter_modules) {
+    load("AMC::Filter::register::$m");
+}
+@filter_modules = sort {
+    "AMC::Filter::register::$a"->weight <=>
+        "AMC::Filter::register::$b"->weight
+} @filter_modules;
+
+sub best_filter_for_file {
+    my ($file) = @_;
+    my $mmax   = '';
+    my $max    = -10;
+    for my $m (@filter_modules) {
+        my $c = "AMC::Filter::register::$m"->claim($file);
+        if ( $c > $max ) {
+            $max  = $c;
+            $mmax = $m;
+        }
+    }
+    return ($mmax);
+}
+
 sub bon_encodage {
     my ( $self, $type ) = @_;
     return (   $self->{config}->get("encodage_$type")
@@ -138,6 +163,15 @@ sub csv_build_name {
     my $self = shift;
     return (  csv_build_0( 'surname', 'nom', 'surname' ) . ' '
             . csv_build_0( 'name', 'prenom', 'name' ) );
+}
+
+sub id2file {
+    my $self = shift;
+    my ( $id, $prefix, $extension ) = (@_);
+    $id =~ s/\+//g;
+    $id =~ s/\//-/g;
+    return (
+        $self->{config}->get_absolute('cr') . "/$prefix-$id.$extension" );
 }
 
 sub moteur_latex {
@@ -222,16 +256,24 @@ sub exporte {
         'fin'           => sub {
             my ( $c, %data ) = @_;
             if ( -f $output ) {
+                if ( $format == 'json' ) {
+                    open my $fh, "<", $output;
+                    my $json = <$fh>;
+                    close $fh;
+                    $self->{data} = decode_json($json);
+                }
 
                 # shows export messages
-
-                $c->erreurs();    #error
-                $c->warning();    #error
+                push @{ $self->{errors} },   $c->erreurs();
+                push @{ $self->{messages} }, $c->warning();
 
             }
             else {
-                print( __"Export to %s did not work: file not created...",
-                    $output );    #error
+                push @{ $self->{messages} },
+                    sprintf(
+                    __ "Export to %s did not work: file not created...",
+                    $output
+                    );
             }
         }
     );
@@ -251,8 +293,49 @@ sub commande {
     $c->execute();
 }
 
+sub remove_project {
+    my $self  = shift;
+    my $force = @_;
+    if ( $self->{globalkey} ) {
+        push(
+            @{ $self->{messages} },
+            sprintf(
+                __("You asked to remove project <b>%s</b>.") . " "
+                    . __(
+                    "This will permanently erase all the files of this project, including the source file as well as all the files you put in the directory of this project, as the scans for example."
+                    )
+                    . " "
+                    . __("Is this really what you want?"),
+                $proj
+            )
+        );
+
+        if ( !$force ) {
+            return;
+        }
+
+        debug "Removing project $proj !";
+
+        # suppression effective des fichiers...
+
+        my $dir = $self->get_shortcut('%PROJET');
+        if ( -d $dir ) {
+            remove_tree( $dir,
+                { 'verbose' => 0, 'safe' => 1, 'keep_root' => 0 } );
+        }
+        else {
+            debug "No directory $dir";
+        }
+    }
+}
+my %component_name = (
+    'latex_packages' => __("LaTeX packages:"),
+    'commands'       => __("Commands:"),
+    'fonts'          => __("Fonts:"),
+);
+
 sub doc_maj {
-    my ( $self, $sur ) = (@_);
+    my ($self) = (@_);
     if ( $self->{project}->{'_capture'}->n_pages_transaction() > 0 ) {
         push(
             @{ $self->{messages} },
@@ -274,7 +357,7 @@ sub doc_maj {
     my $pc = $self->{project}->{_layout}->pages_count;
     $self->{project}->{_layout}->end_transaction('DMAJ');
     if ( $pc > 0 ) {
-        if ( !$sur ) {
+        if ( !$self->{force} ) {
             push(
                 @{ $self->{messages} },
                 __( "Layouts are already calculated for the current documents."
@@ -284,9 +367,12 @@ sub doc_maj {
                     "Updating working documents, the layouts will become obsolete and will thus be erased."
                     )
             );
+            return ();
+        }
+        else {
+            $self->clear_processing('mep:');
         }
 
-        $self->clear_processing('mep:');
     }
 
     # new layout document : XY (from LaTeX)
@@ -327,7 +413,7 @@ sub doc_maj {
             .= __("Install these components on your system and try again.");
 
         push( @{ $self->{errors} }, $message );
-        $self->{status} = 412;
+        $self->{status} = 500;
 
         return (0);
     }
@@ -450,11 +536,14 @@ sub doc_maj {
                         ) if ( $self->{config}->get('filter') eq 'latex' );
 
                     push( @{ $self->{errors} }, $message );
-                    $self->{status} = 412;
+                    $self->{status} = 500;
 
                 }
                 else {
-                    print( 'documents', __ "Documents have been prepared" );
+                    push(
+                        @{ $self->{messages} },
+                        __ "Documents have been prepared"
+                    );
 
                     # verif que tout y est
                     my $ok = 1;
@@ -526,8 +615,8 @@ sub doc_maj {
                     $self->{config}->set( 'seuil',    0.86 );
                     $self->{config}->set( 'seuil_up', 1.0 );
                 }
-                $self->detecte_documents();
             }
+            $self->detecte_documents();
         }
     );
 }
@@ -535,7 +624,6 @@ sub doc_maj {
 sub sujet_impressions_ok {
     my $self = shift;
     my $os   = 'none';
-    my @e    = ();
 
     if ( $self->{config}->get('methode_impression') eq 'file' ) {
 
@@ -550,54 +638,51 @@ sub sujet_impressions_ok {
         }
     }
 
-    debug "Printing: " . join( ",", @e );    #error
+    # Less than 10 pages selected: is it a mistake?
 
-    if ( !@e ) {
+    $self->{project}->{'_layout'}->begin_read_transaction('pPFP');
+    my $max_p    = $self->{project}->{'_layout'}->max_enter();
+    my $students = $self->{project}->{'_layout'}->students_count();
+    $self->{project}->{'_layout'}->end_transaction('pPFP');
 
-        # No page selected:
+    if ( $max_p > 1 ) {
+
+        # Some sheets have more than one enter-page: multiple scans
+        # are not supported...
         push(
             @{ $self->{messages} },
-            __("You did not select any exam to print...")
+            __("You selected only a few sheets to print.") . "\n"
+                . __(
+                "As students are requested to write on more than one page, you must create as many exam sheets as necessary for all your students, with different sheets numbers, and print them all."
+                )
+                . " "
+                . __(
+                "If you print one or several sheets and photocopy them to have enough for all the students, <b>you won't be able to continue with AMC!</b>"
+                )
+                . "\n"
+                . __("Do you want to print the selected sheets anyway?"),
         );
-        return ();
+        return ();    # if ( $resp eq 'no' );
     }
+    elsif ( $students <= 10 ) {
+        if ( $self->{config}->get('auto_capture_mode') != 1 ) {
 
-    if ( 1 + $#e <= 10 ) {
-
-        # Less than 10 pages selected: is it a mistake?
-
-        $self->{project}->{'_layout'}->begin_read_transaction('pPFP');
-        my $max_p    = $self->{project}->{'_layout'}->max_enter();
-        my $students = $self->{project}->{'_layout'}->students_count();
-        $self->{project}->{'_layout'}->end_transaction('pPFP');
-
-        if ( $max_p > 1 ) {
-
-            # Some sheets have more than one enter-page: multiple scans
-            # are not supported...
-
-            return () if ( $resp eq 'no' );
-        }
-        elsif ( $students <= 10 ) {
-            if ( $self->{config}->get('auto_capture_mode') != 1 ) {
-
-                # This looks strange: a few sheets printed, a few sheets
-                # generated, and photocopy mode not selected yet. Ask the
-                # user if he wants to select this mode now.
-                push(
-                    @{ $self->{messages} },
-                    __("You selected only a few sheets to print.") . "\n"
-                        . "<b>"
-                        . __(
-                        "Are you going to photocopy some printed subjects before giving them to the students?"
-                        )
-                        . "</b>\n"
-                        . __(
-                        "If so, the corresponding option will be set for this project."
-                        )
-                );
-                $self->{config}->set( 'auto_capture_mode', 1 );
-            }
+            # This looks strange: a few sheets printed, a few sheets
+            # generated, and photocopy mode not selected yet. Ask the
+            # user if he wants to select this mode now.
+            push(
+                @{ $self->{messages} },
+                __("You selected only a few sheets to print.") . "\n"
+                    . "<b>"
+                    . __(
+                    "Are you going to photocopy some printed subjects before giving them to the students?"
+                    )
+                    . "</b>\n"
+                    . __(
+                    "If so, the corresponding option will be set for this project."
+                    )
+            );
+            $self->{config}->set( 'auto_capture_mode', 1 );
         }
     }
 
@@ -636,14 +721,6 @@ sub sujet_impressions_ok {
         }
     }
 
-    my $fh = File::Temp->new(
-        TEMPLATE => "nums-XXXXXX",
-        TMPDIR   => 1,
-        UNLINK   => 1
-    );
-    print $fh join( "\n", @e ) . "\n";
-    $fh->seek( 0, SEEK_END );
-
     my @o_answer = ( '--no-split', '--no-answer-first' );
     if ( $self->{config}->get('options_impression/print_answersheet') eq
         'split' )
@@ -664,8 +741,6 @@ sub sujet_impressions_ok {
             $self->{config}->get('methode_impression'),
             "--imprimante",
             $self->{config}->get('imprimante'),
-            "--options",
-            $os,
             "--output",
             $self->{config}->get_absolute('options_impression/repertoire')
                 . "/sheet-%e.pdf",
@@ -682,8 +757,6 @@ sub sujet_impressions_ok {
             1,
             "--debug",
             debug_file(),
-            "--fich-numeros",
-            $fh->filename,
             "--extract-with",
             $self->{config}->get('print_extract_with'),
         ],
@@ -691,8 +764,6 @@ sub sujet_impressions_ok {
         'texte'      => __ "Print papers one by one...",
         'progres.id' => 'impression',
         'o'          => {
-            'fh'      => $fh,
-            'etu'     => \@e,
             'printer' => $self->{config}->get('imprimante'),
             'method'  => $self->{config}->get('methode_impression')
         },
@@ -728,8 +799,7 @@ sub save_state_after_printing {
 
     $st->add_print(
         'printer' => $c->{'printer'},
-        'method'  => $c->{'method'},
-        'content' => join( ',', @{ $c->{'etu'} } )
+        'method'  => $c->{'method'}
     );
     $st->write();
 
@@ -785,14 +855,30 @@ sub calcule_mep {
                             "<b>Don't go through the examination</b> before fixing this problem, otherwise you won't be able to use AMC for correction."
                             )
                     );
-                    $self->{status} = 412;
+                    $self->{status} = 500;
                 }
-                else {
 
-                }
             }
         }
     );
+}
+
+sub check_auto_capture_mode {
+    my $self = shift;
+    $self->{project}->{'_capture'}->begin_read_transaction('ckac');
+    my $n = $self->{project}->{'_capture'}->n_copies;
+    if ( $n > 0 && $self->{config}->get('auto_capture_mode') < 0 ) {
+
+        # the auto_capture_mode (sheets photocopied or not) is not set,
+        # but some capture has already been done. This looks weird, but
+        # it can be the case if captures were made with an old AMC
+        # version, or if project parameters have not been saved...
+        # So we try to detect the correct value from the capture data.
+        $self->{config}->set( 'auto_capture_mode',
+            ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 ) );
+    }
+    $self->{project}->{'_capture'}->end_transaction('ckac');
+    return ($n);
 }
 
 sub analyse_call {
@@ -906,6 +992,41 @@ sub analyse_call_go {
     );
 }
 
+sub saisie_auto_ok {
+    my $self = shift;
+    my @f    = ();
+    $self->{uploads}->each( sub { push @f, $_[1]->{'tempname'} } );
+    my $copie = $self->{config}->get('copie_scans');
+
+    clear_old( 'diagnostic', $self->get_shortcut('%PROJET/cr/diagnostic') );
+
+    analyse_call(
+        'f'         => \@f,
+        'getimages' => 1,
+        'copy'     => ( $copie ? $self->get_shortcut('%PROJET/scans/') : '' ),
+        'text'     => __("Automatic data capture..."),
+        'progres'  => 'analyse',
+        'allocate' => (
+              $self->{config}->get('allocate_ids')
+            ? $self->{config}->get('allocate_ids')
+            : 0
+        ),
+        'fin' => sub {
+            my ( $c, %data ) = @_;
+            close( $c->{'o'}->{'fh'} );
+            $self->detecte_analyse();
+            $self->assoc_state();
+            if ( !$data{cancelled} ) {
+                push(
+                    @{ $self->{messages} },
+                    __ "Automatic data capture has been completed"
+                );
+            }
+        },
+    );
+
+}
+
 sub valide_liste {
     my $self = shift;
     my %oo   = @_;
@@ -983,35 +1104,57 @@ sub valide_liste {
     $self->assoc_state();
 }
 
+sub check_possible_assoc {
+    my $self = shift;
+    my ($code) = @_;
+    if ( !-s $self->{config}->get_absolute('listeetudiants') ) {
+        push(
+            @{ $self->{messages} },
+
+# TRANSLATORS: Here, %s will be replaced with the name of the tab "Data capture".
+            sprintf(
+                __
+                    "Before associating names to papers, you must choose a students list file in tab \"%s\".",
+                __ "Data capture"
+            )
+        );
+
+    }
+    elsif ( !$self->{config}->get('liste_key') ) {
+
+        push(
+            @{ $self->{messages} },
+            __( "Please choose a key from primary keys in students list before association."
+            )
+        );
+
+    }
+    elsif ( $code && !$self->{config}->get('assoc_code') ) {
+
+        push(
+            @{ $self->{messages} },
+            __( "Please choose a code (made with LaTeX command \\AMCcode) before automatic association."
+            )
+        );
+
+    }
+    else {
+        return (1);
+    }
+    return (0);
+}
+
 # manual association
 sub associe {
     my $self = shift;
     return () if ( !$self->check_possible_assoc(0) );
+    return () if ( !$self->{filecode} );
+    return () if ( !$self->{idnumber} );
     if ( -f $self->{config}->get_absolute('listeetudiants') ) {
-        my $ga = AMC::Gui::Association::new(
-            'cr'          => $self->{config}->get_absolute('cr'),
-            'data_dir'    => $self->{config}->get_absolute('data'),
-            'liste'       => $self->{config}->get_absolute('listeetudiants'),
-            'liste_key'   => $self->{config}->get('liste_key'),
-            'identifiant' => csv_build_name(),
 
-            'fichier-liens'  => $self->{config}->get_absolute('association'),
-            'global'         => 0,
-            'assoc-ncols'    => $self->{config}->get('assoc_ncols'),
-            'encodage_liste' => bon_encodage('liste'),
-            'encodage_interne' => $self->{config}->get('encodage_interne'),
-            'rtl'              => $self->{config}->get('annote_rtl'),
-            'fin'              => sub {
-                assoc_state();
-            },
-            'size_prefs' => (
-                  $self->{config}->get('conserve_taille')
-                ? $self->{config}
-                : ''
-            ),
-        );
-        if ( $ga->{'erreur'} ) {
-
+        if ( $self->{filecode} =~ /^([0-9]+)-([0-9]+)/ ) {
+            $self->{project}->{_assoc}
+                ->set_manual( $1, $2, $self->{idnumber} );
         }
     }
     else {
@@ -1139,12 +1282,63 @@ sub noter {
                 $self->{config}->get_absolute('texsrc'),
             ],
             'texte'      => __ "Extracting marking scale...",
-            'fin'        => \&noter_postcorrect,
+            'fin'        => \&self->noter_calcul,
             'progres.id' => 'bareme'
         );
     }
     else {
         $self->noter_calcul( '', '' );
+    }
+}
+
+sub noter_postcorrect {
+    my $self = shift;
+    my ( $c, %data ) = @_;
+
+    detecte_documents();
+
+    return if ( $data{cancelled} );
+
+    # check marking scale data: in PostCorrect mode, ask for a sheet
+    # number to get right answers from...
+
+    if ( $self->{project}->{'_scoring'}
+        ->variable_transaction('postcorrect_flag') )
+    {
+
+        debug "PostCorrect option ON";
+
+        # gets available sheet ids
+
+        %postcorrect_ids = ();
+
+        $self->{project}->{'_capture'}->begin_read_transaction('PCex');
+        my $sth = $self->{project}->{'_capture'}->statement('studentCopies');
+        $sth->execute;
+        while ( my $sc = $sth->fetchrow_hashref ) {
+            $postcorrect_student_min = $sc->{'student'}
+                if ( !defined($postcorrect_student_min) );
+            $postcorrect_ids{ $sc->{'student'} }->{ $sc->{'copy'} } = 1;
+            $postcorrect_student_max = $sc->{'student'};
+        }
+        $self->{project}->{'_capture'}->end_transaction('PCex');
+
+        # ask user for a choice
+
+        if ( $self->{config}->get('postcorrect_student') ) {
+
+        }
+        else {
+            $self->{config}
+                ->set( 'postcorrect_student', $postcorrect_student_min );
+            my @c = sort { $a <=> $b }
+                ( keys %{ $postcorrect_ids{$postcorrect_student_min} } );
+            $self->{config}->set( 'postcorrect_copy', $c[0] );
+        }
+
+    }
+    else {
+        noter_calcul( '', '' );
     }
 }
 
@@ -1266,6 +1460,38 @@ sub opt_symbole {
     return ("$s:$type/$color");
 }
 
+sub select_students {
+    my $self = shift;
+
+    $self->{project}->{'_capture'}->begin_read_transaction('gSLi');
+    my $key = $self->{project}->{'_association'}->variable('key_in_list');
+    for my $sc ( $self->{project}->{'_capture'}->student_copies ) {
+        my $manual = $self->{project}->{'_association'}->get_manual(@$c);
+        my $auto   = $self->{project}->{'_association'}->get_auto(@$c);
+        my $type   = 'none';
+        my $idnumber;
+        if ( defined($manual) ) {
+            $idnumber = $manual;
+            $type     = "manual";
+        }
+        elsif ( defined($auto) ) {
+            $idnumber = $auto;
+            $type     = "auto";
+        }
+        my $iter = (
+            filecode => studentids_string(@$sc),
+            idnumber => $idnumber,
+            type     => $type,
+            url      => $self->get_url(
+                "name-" . studentids_string_filename(@sc) . ".jpg"
+            ),
+        );
+        push @{ $self->{data} }, $iter;
+    }
+    $self->{project}->{'_capture'}->end_transaction('gSLi');
+
+}
+
 sub annote_copies {
     my $self = shift;
 
@@ -1294,21 +1520,19 @@ sub annote_copies {
                 $self->{config}->get_absolute('doc_indiv_solution'),
                 "--filename-model",
                 $self->{config}->get('modele_regroupement'),
-                (   $self->{config}->get('ascii_filenames') ? "--force-ascii"
+                (   $self->{config}->get('ascii_filenames')
+                    ? "--force-ascii"
                     : "--no-force-ascii"
                 ),
                 "--single-output",
                 $single_output,
                 "--sort",
                 $self->{config}->get('export_sort'),
-                "--id-file",
-                $id_file,
+
+                #"--id-file",
+                #$id_file,
                 "--debug",
                 debug_file(),
-                "--progression-id",
-                'annotate',
-                "--progression",
-                1,
                 "--line-width",
                 $self->{config}->get('symboles_trait'),
                 "--font-name",
@@ -1374,22 +1598,40 @@ sub annote_copies {
 
 sub annotate_papers {
 
-    $self->maj_export();
-
+    $self->{config}->set( 'project:regroupement_type', 'STUDENTS' );
     $self->annote_copies;
+}
+
+sub annotate_all {
+
+    $self->{config}->set( 'project:regroupement_type', 'ALL' );
+    $self->annote_copies;
+}
+
+sub file_maj {
+    my (@f)     = @_;
+    my $present = 1;
+    my $oldest  = 0;
+    for my $file (@f) {
+        if ( $file && -f $file ) {
+            if ( -r $file ) {
+                my @s = stat($file);
+                $oldest = $s[9] if ( $s[9] > $oldest );
+            }
+            else {
+                return ('UNREADABLE');
+            }
+        }
+        else {
+            return ('NOTFOUND');
+        }
+    }
+    return ( format_date($oldest) );
 }
 
 sub detecte_documents {
     my $self = shift;
-    $self->check_document( $self->{config}->get_absolute('doc_question'),
-        'question' );
-    $self->check_document( $self->{config}->get_absolute('doc_solution'),
-        'solution' );
-    $self->check_document(
-        $self->{config}->get_absolute('doc_indiv_solution'),
-        'indiv_solution' );
-    $self->check_document( $self->{config}->get_absolute('doc_catalog'),
-        'catalog' );
+
     my $s = file_maj( map { $self->{config}->get_absolute( 'doc_' . $_ ) }
             (qw/question setting/) );
     if ( $s eq 'UNREADABLE' ) {
@@ -1501,7 +1743,7 @@ sub clear_processing {
     my ($steps) = @_;
     my $next    = '';
     my %s       = ();
-    for my $k (qw/doc mep capture mark assoc/) {
+    for my $k (qw/doc mep capture zooms mark assoc annoted/) {
         if ( $steps =~ /\b$k:/ ) {
             $next = 1;
             $s{$k} = 1;
@@ -1551,9 +1793,11 @@ sub clear_processing {
 
         # remove zooms
         remove_tree(
-            $self->{config}->get_absolute('%PROJET/cr/zooms'),
+            $self->get_shortcut('%PROJET/cr/zooms'),
             { 'verbose' => 0, 'safe' => 1, 'keep_root' => 1 }
         );
+        remove_tree( $self->get_shortcut('%PROJET/scans/'),
+            { 'verbose' => 0, 'safe' => 1, 'keep_root' => 1 } );
 
         # remove namefield extractions and page layout image
         my $crdir = $self->{config}->get_absolute('%PROJET/cr');
@@ -1563,6 +1807,19 @@ sub clear_processing {
         for (@cap_files) {
             unlink "$crdir/$_";
         }
+    }
+    if ( $s{'zooms'} ) {
+        remove_tree(
+            $self->get_shortcut('%PROJET/cr/zooms'),
+            { 'verbose' => 0, 'safe' => 1, 'keep_root' => 1 }
+        );
+    }
+
+    if ( $s{'annoted'} ) {
+        remove_tree(
+            $self->get_shortcut('%PROJET/cr/corrections/jpg'),
+            { 'verbose' => 0, 'safe' => 1, 'keep_root' => 1 }
+        );
     }
 
     # update gui...
@@ -1596,6 +1853,7 @@ sub detecte_analyse {
     $self->{project}->{'_capture'}->end_transaction('ADCP');
 
     # resume
+    $self->{data}->{recognized} = $r{'complete'};
 
     my $tt = '';
     if ( $r{'incomplete'} ) {
@@ -1603,6 +1861,7 @@ sub detecte_analyse {
             = sprintf( __
                 "Data capture from %d complete papers and %d incomplete papers",
             $r{'complete'}, $r{'incomplete'} );
+        $self->show_missing_pages();
 
     }
     elsif ( $r{'complete'} ) {
@@ -1633,12 +1892,12 @@ sub detecte_analyse {
     }
     else {
         $tt = sprintf( __ "%d scans were not recognized.", $failed_nb );
-
+        $self->update_unrecognized();
     }
 
     push( @{ $self->{messages} }, $tt );
 
-    return ( \%r );
+    return;
 }
 
 sub show_missing_pages {
@@ -1684,28 +1943,45 @@ sub update_unrecognized {
         my $preproc_file
             = $self->{config}->get_absolute('%PROJET/cr/diagnostic') . "/"
             . $scan_n . ".png";
-        #push( %{$self->{data}}, ( $f, $ff->{'filename'}, $preproc_file ) );
+
+        push(
+            @{ $self->{data}->{unrecognized} },
+            ( $ff->{'filename'} => "diagnostic/" . $scan_n . ".png" )
+        );
     }
 }
 
 sub unrecognized_delete {
     my $self = shift;
+    my $file = $self->{filecode};
     $self->{project}->{'_capture'}->begin_transaction('rmUN');
-    for my $s (@sel) {
 
-        $self->{project}->{'_capture'}->statement('deleteFailed')
-            ->execute($file);
-        unlink $self->{config}->get_absolute($file);
-    }
+    $self->{project}->{'_capture'}->statement('deleteFailed')->execute($file);
+    unlink $self->{config}->get_absolute($file);
 
     $self->detecte_analyse();
     $self->{project}->{'_capture'}->end_transaction('rmUN');
 }
 
-sub set_source_tex {
-    my ($importe) = @_;
+sub unrecognized_delete_all {
+    my $self = shift;
+    my $file = "%PROJET/cr/diagnostic/" . $self->{filecode};
+    $self->{project}->{'_capture'}->begin_transaction('rmUNA');
+    my $failed
+        = $self->{project}->{'_capture'}->dbh->selectall_arrayref(
+        $self->{project}->{'_capture'}->statement('failedList'),
+        { Slice => {} } );
+    for my $ff (@$failed) {
+        $self->{project}->{'_capture'}->statement('deleteFailed')
+            ->execute( $ff->{'filename'} );
+        unlink $self->{config}->get_absolute( $ff->{'filename'} );
+    }
+    $self->{project}->{'_capture'}->end_transaction('rmUNA');
+    $self->detecte_analyse();
+}
 
-    importe_source() if ($importe);
+sub set_source_tex {
+    my $self = shift;
     valide_source_tex();
 }
 
@@ -1765,14 +2041,219 @@ sub unzip_to_temp {
     return ( $temp_dir, $error );
 }
 
+sub source_latex_choisir {
+    my $self     = shift;
+    my $texsrc   = '';
+    my $filename = 'source';
+    my $filetemp;
+    my $dir = $self->get_shortcut('%PROJET');
+    my $ext = '';
+
+    # choisir un fichier deja present
+    if ( defined $self->{file} ) {
+        my $content = decode_base64( $self->{file} );
+        if ($h
+            && (   $h =~ /\\usepackage.*\{automultiplechoice\}/
+                || $h =~ /\\documentclass\{/ )
+            )
+        {
+            $ext = '.tex';
+        }
+        elsif ( $h && $h =~ /^\s*\#\s*AMC-TXT/ ) {
+            $ext = '.txt';
+        }
+        else {
+            $ext      = '.zip';
+            $dir      = tempdir( DIR => tmpdir(), CLEANUP => 1 );
+            $filetemp = $dir . $filename . $ext;
+        }
+        open( OUT,
+            ">:encoding(" . $self->{'out.encodage'} . ")",
+            $dir . $filename . $ext
+        );
+        print OUT $content;
+        close(OUT);
+    }
+    elsif ( defined $self->{uploads} ) {
+        my $upload = $req->uploads->[0];
+        $filetemp = $upload->path;
+        if ( $upload->content_type == 'text/plain' ) {
+            $ext = '.txt';
+            move( $filetemp, $dir . $filename . $ext );
+        }
+        elsif ( $upload->content_type == 'application/x-tex' ) {
+            $ext = '.tex';
+            move( $filetemp, $dir . $filename . $ext );
+        }
+
+    }
+    if ( $ext == '.txt' || $ext == '.tex' ) {
+        $self->{config}->set( 'project:texsrc',
+            $self->{config}->{shortcuts}
+                ->relatif( $filename . $ext, $self->{project}->{'nom'} ) );
+    }
+    else {
+
+        # cree un repertoire temporaire pour dezipper
+
+        my ( $temp_dir, $rv ) = unzip_to_temp($filetemp);
+
+        my ( $n, $suivant ) = n_fich($temp_dir);
+
+        if ( $rv || $n == 0 ) {
+            push(
+                @{ $self->{messages} },
+                sprintf(
+                    __ "Nothing extracted from archive %s. Check it.",
+                    $fich
+                )
+            );
+        }
+        else {
+            # unzip OK
+            # vire les repertoires intermediaires :
+
+            while ( $n == 1 && -d $suivant ) {
+                debug "Changing root directory : $suivant";
+                $temp_dir = $suivant;
+                ( $n, $suivant ) = n_fich($temp_dir);
+            }
+
+            # bouge les fichiers la ou il faut
+
+            my $hd = $dir;
+
+            mkdir($hd) if ( !-e $hd );
+
+            my @archive_files;
+
+            if ( opendir( MVR, $temp_dir ) ) {
+                @archive_files = grep { !/^\./ } readdir(MVR);
+                closedir(MVR);
+            }
+            else {
+                debug("ARCHIVE : Can't open $temp_dir : $!");
+            }
+
+            my $latex;
+
+            for my $ff (@archive_files) {
+                debug "Moving to project: $ff";
+                if ( $ff =~ /\.tex$/i ) {
+                    $latex = $ff;
+                    if ( $oo{'decode'} ) {
+                        debug "Decoding $ff...";
+                        move( "$temp_dir/$ff", "$temp_dir/$ff.0enc" );
+                        copy_latex( "$temp_dir/$ff.0enc", "$temp_dir/$ff" );
+                    }
+                }
+                if ( system( "mv", "$temp_dir/$ff", "$hd/$ff" ) != 0 ) {
+                    debug "ERR: Move failed: $temp_dir/$ff --> $hd/$ff -- $!";
+                    debug "(already exists)" if ( -e "$hd/$ff" );
+                }
+            }
+
+            if ($latex) {
+                $self->{config}->set( 'project:texsrc',
+                    $self->get_shortcut("%PROJET/$latex") );
+                debug "LaTeX found : $latex";
+            }
+        }
+    }
+    $self->valide_source_tex();
+
+}
+
+# copie en changeant eventuellement d'encodage
+sub copy_latex {
+    my ( $src, $dest ) = @_;
+
+    # 1) reperage du inputenc dans le source
+    my $i = '';
+    open( SRC, $src );
+LIG: while (<SRC>) {
+        s/%.*//;
+        if (/\\usepackage\[([^\]]*)\]\{inputenc\}/) {
+            $i = $1;
+            last LIG;
+        }
+    }
+    close(SRC);
+
+    my $ie = get_enc($i);
+    my $id = get_enc( $self->{config}->get('encodage_latex') );
+    if ( $ie && $id && $ie->{'iso'} ne $id->{'iso'} ) {
+        debug "Reencoding $ie->{'iso'} => $id->{'iso'}";
+        open( SRC, "<:encoding($ie->{'iso'})", $src ) or return ('');
+        open( DEST, ">:encoding($id->{'iso'})", $dest )
+            or close(SRC), return ('');
+        while (<SRC>) {
+            chomp;
+            s/\\usepackage\[([^\]]*)\]\{inputenc\}/\\usepackage[$id->{'inputenc'}]{inputenc}/;
+            print DEST "$_\n";
+        }
+        close(DEST);
+        close(SRC);
+        return (1);
+    }
+    else {
+        return ( copy( $src, $dest ) );
+    }
+}
+
+sub importe_source {
+    my $self = shift;
+    my ( $fxa, $fxb, $fb ) = splitpath( $self->{config}->get('texsrc') );
+    my $dest = $self->get_shortcut($fb);
+
+    # fichier deja dans le repertoire projet...
+    return () if ( is_local( $self->{config}->get('texsrc'), 1 ) );
+
+    if ( -f $dest ) {
+        push(
+            @{ $self->{messages} },
+            __( "File %s already exists in project directory: do you wnant to replace it?"
+                )
+                . " "
+                . __(
+                "Click yes to replace it and loose pre-existing contents, or No to cancel source file import."
+                ),
+            $fb
+        );
+
+        if ( !$self->{force} ) {
+            return (0);
+        }
+    }
+
+    if ( copy_latex( $self->{config}->get_absolute('texsrc'), $dest ) ) {
+        $self->{config}->set( 'project:texsrc',
+            $self->{config}->{shortcuts}->relatif($dest) );
+        $self->valide_source_tex();
+        push(
+            @{ $self->{messages} },
+            __("The source file has been copied to project directory.") . " "
+                . sprintf(
+                __
+                    "You can now edit it with button \"%s\" or with any editor.",
+                __ "Edit source file"
+                )
+        );
+
+    }
+    else {
+        push( @{ $self->{messages} }, __ "Error copying source file: %s",
+            $! );
+    }
+}
+
 sub valide_projet {
     my $self = shift;
 
     $self->set_source_tex();
 
     $self->{project}->{'_data'}
-        = AMC::Data->new( $self->{config}->get_absolute('data'),
-        'progress' => \%w );
+        = AMC::Data->new( $self->{config}->get_absolute('data') );
     for (qw/layout capture scoring association report/) {
         $self->{project}->{ '_' . $_ }
             = $self->{project}->{'_data'}->module($_);
@@ -1789,46 +2270,327 @@ sub valide_projet {
 
 }
 
-sub create_project {
+my $email_sl;
+my $email_key;
+my $email_r;
+
+sub project_email_name {
+    my $self = shift;
+    my ($markup) = @_;
+    my $pn
+        = (    $self->{config}->get('nom_examen')
+            || $self->{config}->get('code_examen')
+            || $self->{project}->{'nom'} );
+    if ($markup) {
+        return ( $pn eq $self->{project}->{'nom'} ? "<b>$pn</b>" : $pn );
+    }
+    else {
+        return ($pn);
+    }
+}
+
+sub send_emails {
     my $self = shift;
 
-    # creation du repertoire et des sous-repertoires de projet
-    for my $sous ( '',
-        qw:cr cr/corrections cr/corrections/jpg cr/corrections/pdf cr/zooms cr/diagnostic data scans exports:
-        )
-    {
-        my $rep = $self->{config}->get('rep_projets') . "/$proj/$sous";
-        if ( !-x $rep ) {
-            debug "Creating directory $rep...";
-            mkdir($rep);
+    # are there some annotated answer sheets to send?
+
+    $self->{project}->{'_report'}->begin_read_transaction('emNU');
+    my $n = $self->{project}->{'_report'}->type_count(REPORT_ANNOTATED_PDF);
+    my $n_annotated = $self->{project}->{'_capture'}->annotated_count();
+    $self->{project}->{'_report'}->end_transaction('emNU');
+
+    if ( $n == 0 ) {
+        push(
+            @{ $self->{messages} },
+            __("There are no annotated corrected answer sheets to send.")
+                . " "
+                . (
+                $n_annotated > 0
+                ? __(
+                    "Please group the annotated sheets to PDF files to be able to send them."
+                    )
+                : __(
+                    "Please annotate answer sheets and group them to PDF files to be able to send them."
+                )
+                )
+        );
+
+        return ();
+    }
+
+    # check perl modules availibility
+
+    my @needs_module = (
+        qw/Email::Address Email::MIME
+            Email::Sender Email::Sender::Simple/
+    );
+    if ( $self->{config}->get('email_transport') eq 'sendmail' ) {
+        push @needs_module, 'Email::Sender::Transport::Sendmail';
+    }
+    elsif ( $self->{config}->get('email_transport') eq 'SMTP' ) {
+        push @needs_module, 'Email::Sender::Transport::SMTP';
+    }
+    my @manque = ();
+    for my $m (@needs_module) {
+        if ( !check_install( module => $m ) ) {
+            push @manque, $m;
         }
     }
-    $self->valide_projet();
-    return (1);
+    if (@manque) {
+        debug 'Mailing: Needs perl modules ' . join( ', ', @manque );
+
+        push(
+            @{ $self->{messages} },
+            sprintf(
+                __( "Sending emails requires some perl modules that are not installed: %s. Please install these modules and try again."
+                ),
+                '<b>' . join( ', ', @manque ) . '</b>'
+            )
+        );
+
+        return ();
+    }
+
+    load Email::Address;
+
+    # then check a correct sender address has been set
+
+    my @sa = Email::Address->parse( $self->{config}->get('email_sender') );
+
+    if ( !@sa ) {
+        my $message;
+        if ( $self->{config}->get('email_sender') ) {
+            $message .= sprintf(
+                __("The email address you entered (%s) is not correct."),
+                $self->{config}->get('email_sender')
+                )
+                . "\n"
+                . __
+                "Please edit your preferences to correct your email address.";
+        }
+        else {
+            $message .= __("You did not enter your email address.") . "\n"
+                . __ "Please edit the preferences to set your email address.";
+        }
+        push( @{ $self->{messages} }, $message );
+
+        return ();
+    }
+
+    # Now check (if applicable) that sendmail path is ok
+
+    if (   $self->{config}->get('email_transport') eq 'sendmail'
+        && $self->{config}->get('email_sendmail_path')
+        && !-f $self->{config}->get('email_sendmail_path') )
+    {
+        push(
+            @{ $self->{messages} },
+            sprintf(
+                __( "The <i>sendmail</i> program cannot be found at the location you specified in the preferences (%s). Please update your configuration."
+                ),
+                $self->{config}->get('email_sendmail_path')
+            )
+        );
+
+        return ();
+    }
+
+    # find columns with emails in the students list file
+
+    my %cols_email
+        = $self->{project}->{_students_list}
+        ->heads_count( sub { my @a = Email::Address->parse(@_); return (@a) }
+        );
+    my @cols = grep { $cols_email{$_} > 0 } ( keys %cols_email );
+
+    if ( !@cols ) {
+        push(
+            @{ $self->{messages} },
+            __
+                "No email addresses has been found in the students list file. You need to write the students addresses in a column of this file."
+        );
+
+        return ();
+    }
+
+    # which is the best column ?
+
+    my $nmax    = 0;
+    my $col_max = '';
+
+    for (@cols) {
+        if ( $cols_email{$_} > $nmax ) {
+            $nmax    = $cols_email{$_};
+            $col_max = $_;
+        }
+    }
+
+    $self->{config}->set( 'project:email_col', $col_max )
+        if ( !$self->{config}->get('email_col') );
+
+    $self->{project}->{'_report'}->begin_read_transaction('emCC');
+    $email_key = $self->{project}->{'_association'}->variable('key_in_list');
+    $email_r   = $self->{project}->{'_report'}
+        ->get_associated_type(REPORT_ANNOTATED_PDF);
+
+    $self->{emails_failed} = [
+        map { $_->{id} }
+        grep { $_->{mail_status} == REPORT_MAIL_FAILED } (@$email_r)
+    ];
+
+    $self->{project}->{'_report'}->end_transaction('emCC');
+
+    $self->{'attachments_expander'}
+        = ( @{ $self->{config}->get('email_attachment') } ? 1 : 0 );
+
+    # are all attachments present?
+    my @missing = grep { !-f $self->get_shortcut($_) }
+        ( @{ $self->{config}->get('email_attachment') } );
+    if (@missing) {
+        push(
+            @{ $self->{messages} },
+            __( "Some files you asked to be attached to the emails are missing:"
+                )
+                . "\n"
+                . join( "\n", @missing ) . "\n"
+                . __(
+                "Please create them or remove them from the list of attached files."
+                )
+        );
+        return ();
+    }
+
+    # writes the list of copies to send in a temporary file
+    my $fh = File::Temp->new(
+        TEMPLATE => "ids-XXXXXX",
+        TMPDIR   => 1,
+        UNLINK   => 1
+    );
+    print $fh join( "\n", @ids ) . "\n";
+    $fh->seek( 0, SEEK_END );
+
+    my @mailing_args = (
+        "--project",        $self->get_shortcut('%PROJET/'),
+        "--project-name",   $self->project_email_name(),
+        "--students-list",  $self->{config}->get_absolute('listeetudiants'),
+        "--list-encoding",  $self->bon_encodage('liste'),
+        "--csv-build-name", $self->csv_build_name(),
+
+        #"--ids-file",$fh->filename,
+        "--email-column",
+        $self->{config}->get('email_col'),
+        "--sender",
+        $self->{config}->get('email_sender'),
+        "--subject",
+        $self->{config}->get('email_subject'),
+        "--text",
+        $self->{config}->get('email_text'),
+        "--text-content-type",
+        (   $self->{config}->get('email_use_html')
+            ? 'text/html'
+            : 'text/plain'
+        ),
+        "--transport",
+        $self->{config}->get('email_transport'),
+        "--sendmail-path",
+        $self->{config}->get('email_sendmail_path'),
+        "--smtp-host",
+        $self->{config}->get('email_smtp_host'),
+        "--smtp-port",
+        $self->{config}->get('email_smtp_port'),
+        "--cc",
+        $self->{config}->get('email_cc'),
+        "--bcc",
+        $self->{config}->get('email_bcc'),
+        "--delay",
+        $self->{config}->get('email_delay'),
+    );
+
+    for ( @{ $self->{config}->get('email_attachment') } ) {
+        push @mailing_args, "--attach", $self->get_shortcut($_);
+    }
+
+    commande(
+        'commande' => [
+            "auto-multiple-choice",
+            "mailing",
+            pack_args(
+                @mailing_args, "--debug",
+                debug_file(),  "--progression-id",
+                'mailing',     "--progression",
+                1,             "--log",
+                $self->get_shortcut('mailing.log'),
+            ),
+        ],
+        'progres.id' => 'mailing',
+        'texte'      => __ "Sending emails...",
+        'o'          => { 'fh' => $fh },
+        'fin'        => sub {
+            my ( $c, %data ) = @_;
+            close( $c->{'o'}->{'fh'} );
+
+            my $ok     = $c->variable('OK')     || 0;
+            my $failed = $c->variable('FAILED') || 0;
+            my @message;
+            push @message, "<b>" . ( __ "Cancelled." ) . "</b>"
+                if ( $data{cancelled} );
+            push @message, sprintf( __ "%d message(s) has been sent.", $ok );
+            if ( $failed > 0 ) {
+                push @message,
+                      "<b>"
+                    . sprintf( "%d message(s) could not be sent.", $failed )
+                    . "</b>";
+            }
+            push( @{ $self->{messages} }, join( "\n", @message ) );
+
+        },
+    );
+}
+
+sub create_project {
+    my $self = shift;
+    my $proj = $self->{project}->{'nom'};
+    if ( $self->{globalkey} ) {
+
+        # creation du repertoire et des sous-repertoires de projet
+        for my $sous ( '',
+            qw:cr cr/corrections cr/corrections/jpg cr/corrections/pdf cr/zooms cr/diagnostic data scans exports:
+            )
+        {
+            my $rep = $self->{config}->get('rep_projets') . "/$proj/$sous";
+            if ( !-x $rep ) {
+                debug "Creating directory $rep...";
+                mkdir($rep);
+            }
+        }
+        $self->valide_projet();
+    }
 
 }
 
 my %ROUTING = (
     '/quiz/add'                     => 'create_project',
-    '/quiz/delete'                  => 'delete_project',
-    '/quiz/upload/latex'            => 'set_source',
-    '/quiz/upload/zip'              => 'set_source',
+    '/quiz/delete'                  => 'remove_project',
+    '/quiz/upload/latex'            => 'source_latex_choisir',
+    '/quiz/upload/zip'              => 'source_latex_choisir',
+    '/document'                     => 'get_doc',
     '/document/generate'            => 'doc_maj',
     '/document/latex'               => 'get_source',
-    '/sheet/upload'                 => 'scan_upload',
-    '/sheet/delete'                 => '',
-    '/sheet/delete/unknown'         => '',
-    '/sheet/delete/unknown/student' => '',
-    '/sheet/'                       => '',
-    '/association/'                 => 'assoc_resultat',
-    '/association/associate/all'    => 'assoc_auto',
+    '/sheet/upload'                 => 'saisie_auto_ok',
+    '/sheet/delete'                 => 'sheet_delete',
+    '/sheet/delete/unknown'         => 'unrecognized_delete_all',
+    '/sheet/delete/unknown/student' => 'unrecognized_delete',
+    '/sheet/'                       => 'detecte_analyse',
+    '/association/'                 => 'select_students',
+    '/association/associate/all'    => 'associe_auto',
     '/association/associate/one'    => 'associe',
-    '/grading'                      => 'export',
-    '/grading/grade'                => 'noter_calcul',
+    '/grading'                      => 'export_csv_ods',
+    '/grading/json'                 => 'export_json',
+    '/grading/grade'                => 'noter',
     '/grading/stats'                => 'noter_resultat',
-    '/annotation/'                  => '',
-    '/annotation/annotate'          => 'annote_copies',
-    '/annotation/pdf'               => '',
+    '/annotation/'                  => 'get_annotation',
+    '/annotation/annotate'          => 'annotate_papers',
+    '/annotation/pdf'               => 'annotate_all',
 
 );
 
@@ -1892,11 +2654,11 @@ my %PARAMS = (
     "verdict-question"           => 'verdict_q',
     "verdict-question-cancelled" => 'verdict_qc'
 );
-my @POST = ( 'filecode', 'idnumber', 'students', 'file' );
+my @POST = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
 
 sub new {
     my $class = shift;
-    my ( $dir, $ip, $request, $uploads ) = @_;
+    my ( $dir, $request, $post ) = @_;
     my $self = { status => 200, errors => (), messages => (), data => () };
     $self->{config} = Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
@@ -1904,60 +2666,56 @@ sub new {
         o_dir     => $dir,
     );
     my $base_url = $self->{config}->get('general:api_url');
-    if ( defined($ip) ) {    #not config script
-        if ( defined($request) ) {
-            if ( ref $request eq 'HASH' ) {
-                my $project_dir = $ip . ":" . $request->{apikey}
-                    if defined( $request->{apikey} );
-                my $globalkey = $request->{globalkey}
-                    if defined( $request->{globalkey} );
-            }
-            elsif ( $request
-                =~ /^\Q$base_url\E\/image\/([^\/]*)\/([^\.]*)\.(.*)$/ )
-            {
-                my $project_dir = $prefix . ":" . $1;
-                $self->{wanted_file} = "%PROJET/cr/" . $2 . ".jpg"
-                    if ( $3 eq 'jpg' );
-            }
-
-            if ( defined($project_dir) ) {
-                $self->{project}->{'nom'} = $project_dir;
-                $self->{config}->{shortcuts}
-                    ->set( project_name => $project_dir );
-                if ( -d $self->get_shortcut('%PROJET') ) {
-                    $self->{config}->open_project($project_dir);
-                    if ( defined( $request->{apikey} ) ) {
-                        my @config_key = values %PARAMS;
-                        my @cli_key    = keys %PARAMS;
-                        for my $k ( keys %{$request} ) {
-                            $self->set_config( $k, $request->{$k} )
-                                if ( defined $config_key[$k] );
-                            $self->set_config( $PARAMS{$k}, $request->{$k} )
-                                if ( defined $cli_key[$k] );
-                            $self->{$k} = $request->{$k}
-                                if ( defined $POST[$k] );
-
-                        }
-                        $self->{uploads} = $uploads if ( defined $uploads );
-                    }
-                }
-                elsif (
-                    defined($globalkey)
-                    && ( $globalkey eq
-                        $self->{config}->get('general:api_secret') )
-                    )
-                {
-                    $self->{status} = 404;
-                    push( @{ $self->{messages} }, "Not Found" );
-                }
-                else {
-                    $self->{status} = 403;
-                    push( @{ $self->{messages} }, "Forbidden" );
-                }
-            }
+    if ( defined($request) ) {    #not config script
+        if ( defined($post) ) {
+            my $project_dir = $request->address . ":" . $post->{apikey}
+                if defined( $post->{apikey} );
+            $self->{globalkey}
+                = $post->{globalkey} eq
+                $self->{config}->get('general:api_secret')
+                if defined( $request->{globalkey} );
         }
-        else {    # image
+        elsif ( $request->path_info
+            =~ /^\Q$base_url\E\/image\/([^\/]*)\/([^\.]*)\.(.*)$/ )
+        {
+            my $project_dir = $request->address . ":" . $1;
+            $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
+                if ( $3 eq 'jpg' || $3 eq 'png' );
+        }
+        if ( defined($project_dir) ) {
+            $self->{project}->{'nom'} = $project_dir;
+            $self->{config}->{shortcuts}->set( project_name => $project_dir );
+            if ( -d $self->get_shortcut('%PROJET') ) {
+                $self->{config}->open_project($project_dir);
+                if ( defined( $post->{apikey} ) ) {
+                    my @config_key = values %PARAMS;
+                    my @cli_key    = keys %PARAMS;
+                    for my $k ( keys %{$post} ) {
+                        $self->set_config( 'project:' . $k, $post->{$k} )
+                            if ( defined $config_key[$k] );
+                        $self->set_config( 'project:' . $PARAMS{$k},
+                            $post->{$k} )
+                            if ( defined $cli_key[$k] );
+                        $self->{$k} = $post->{$k}
+                            if ( defined $POST[$k] );
 
+                    }
+                    $self->{uploads} = $request->uploads
+                        if ( defined $request->uploads );
+                    $self->{server}
+                        = $request->scheme . "://" . $request->uri->host;
+                }
+            }
+            elsif ( defined( $self->{globalkey} )
+                && $self->{globalkey} )
+            {
+                $self->{status} = 404;
+                push( @{ $self->{messages} }, "Not Found" );
+            }
+            else {
+                $self->{status} = 403;
+                push( @{ $self->{messages} }, "Forbidden" );
+            }
         }
     }
     bless $self, $class;
@@ -1999,6 +2757,112 @@ sub get_file {
         ];
     }
 
+}
+
+sub get_url {
+    my ( $self, $type, $file ) = (@_);
+    my $url = $self->{server};
+    if ( $type == "/download" ) {    #download
+
+        $url .= "/download/";
+    }
+    else {
+        $url .= "/image/" . $self->{apikey} . "/";
+    }
+    $url .= $file;
+    return $url;
+}
+
+sub get_doc {
+    my $self = shift;
+    for (qw/question solution catalog/) {
+        my $f = $self->get_absolute( 'doc_' . $_ );
+        self->{data}->{$_}
+            = $self->get_url( $self->get_config( 'doc_' . $_ ) )
+            if ( -f $f );
+    }
+    self->{data}->{zip} = $config->get_url('documents.zip')
+        if ( -f $self->get_shortcut('%PROJET/documents.zip') );
+}
+
+sub generate_zip {
+    my $self    = shift;
+    my $zipfile = $config->get_shortcut('%PROJET') . '/documents.zip';
+
+    commande(
+        'commande' => [
+            "zip",
+            "-r",
+            "--methode",
+            $zipfile,
+            $self->{config}->get_absolute('options_impression/repertoire')
+                . '/*',
+
+        ]
+    );
+
+}
+
+sub generate_doc {
+    my $self = shift;
+    $self->doc_maj();
+    $self->sujet_impressions_ok();
+    $self->generate_zip();
+
+}
+
+sub export_json {
+    my $self = shift;
+    $self->{config}->set( 'project:format_export', 'json' );
+    $self->exporte;
+}
+
+sub export_csv_ods {
+    my $self = shift;
+
+    for (qw/CSV ods/) {
+        $self->{config}->set( 'project:format_export', $_ );
+        $self->export;
+    }
+
+}
+
+sub get_source {
+    my $self = shift;
+    my $url  = $self->{server} . "/download/";
+    $url .= $self->{config}->{shortcuts}
+        ->relatif( $self->{config}->get("texsrc") );
+    $self->{data}->{url} = $url;
+}
+
+sub get_annotaion {
+    my $self = shift;
+    $self->{project}->{'_capture'}->begin_read_transaction('UNRC');
+    my $failed
+        = $self->{project}->{'_capture'}->dbh->selectall_arrayref(
+        $self->{project}->{'_capture'}->statement('failedList'),
+        { Slice => {} } );
+    $self->{project}->{'_capture'}->end_transaction('UNRC');
+
+    for my $ff (@$failed) {
+
+        my $f = $ff->{'filename'};
+        $f =~ s:.*/::;
+        my ( undef, undef, $scan_n )
+            = splitpath( $self->{config}->get_absolute( $ff->{'filename'} ) );
+        my $preproc_file
+            = $self->{config}->get_absolute('%PROJET/cr/diagnostic') . "/"
+            . $scan_n . ".png";
+
+        push(
+            @{ $self->{data}->{unrecognized} },
+            ( $ff->{'filename'} => "diagnostic/" . $scan_n . ".png" )
+        );
+    }
+    my $url = $self->{server} . "/download/";
+    $url .= $self->{config}->{shortcuts}
+        ->relatif( $self->{config}->get("texsrc") );
+    $self->{data}->{url} = $url;
 }
 
 sub DESTROY {
@@ -2045,6 +2909,21 @@ sub get_config {
     return $self->{config}->get($key);
 }
 
+sub sheet_delete {
+    my $self = shift;
+    $self->clear_processing('capture:');
+}
+
+sub get_api_url {
+    my $dir    = @_;
+    my $config = Config->new(
+        shortcuts => AMC::Path::new( home_dir => $dir ),
+        home_dir  => $dir,
+        o_dir     => $dir
+    );
+    return $self->{config}->get('api_url');
+}
+
 sub set_config {
     my ( $self, $key, $value ) = @_;
     $self->{config}->set( 'project:' . $key, $value );
@@ -2053,6 +2932,11 @@ sub set_config {
 sub get_shortcut {
     my ( $self, $shortcut ) = @_;
     return ( $self->{config}->{shortcuts}->absolu($shortcut) );
+}
+
+sub get_relatif {
+    my ( $self, $shortcut ) = @_;
+    return ( $self->{config}->{shortcuts}->relatif($shortcut) );
 }
 
 sub call {
