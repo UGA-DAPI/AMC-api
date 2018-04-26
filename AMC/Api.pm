@@ -2957,7 +2957,7 @@ sub sheet_delete {
 
 sub get_api_url {
     my $dir    = @_;
-    my $config = Config->new(
+    my $config = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
         o_dir     => $dir
