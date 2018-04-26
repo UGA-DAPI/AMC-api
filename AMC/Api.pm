@@ -1494,7 +1494,7 @@ sub select_students {
             idnumber => $idnumber,
             type     => $type,
             url      => $self->get_url(
-                "name-" . studentids_string_filename(@sc) . ".jpg"
+                "name-" . studentids_string_filename(@sc) . ".jpg",'image'
             ),
         );
         push @{ $self->{data} }, %iter;
@@ -2671,7 +2671,7 @@ my @POST = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
 sub new {
     my $class = shift;
     my ( $dir, $request, $post ) = @_;
-    my $self = { status => 200, errors => [], messages => [], data => [] };
+    my $self = { status => 200, errors => [], messages => [], data => {} };
     $self->{config} = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
@@ -2772,14 +2772,13 @@ sub get_file {
 }
 
 sub get_url {
-    my ( $self, $type, $file ) = (@_);
+    my ( $self, $file, $type ) = (@_);
     my $url = $self->{server};
-    if ( $type == "/download" ) {    #download
-
-        $url .= "/download/";
-    }
-    else {
+    if ( $type == "image" ) {    #image
         $url .= "/image/" . $self->{apikey} . "/";
+    }
+    else { #download
+        $url .= "/download/";
     }
     $url .= $file;
     return $url;
