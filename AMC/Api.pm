@@ -2677,14 +2677,14 @@ sub new {
         home_dir  => $dir,
         o_dir     => $dir,
     );
-    my $base_url = $self->{config}->get('general:api_url');
+    my $base_url = $self->{config}->get('global:api_url');
     if ( defined($request) ) {    #not config script
         if ( defined($post) ) {
             my $project_dir = $request->address . ":" . $post->{apikey}
                 if defined( $post->{apikey} );
             $self->{globalkey}
                 = $post->{globalkey} eq
-                $self->{config}->get('general:api_secret')
+                $self->{config}->get('global:api_secret')
                 if defined( $request->{globalkey} );
         }
         elsif ( $request->path_info
@@ -2743,7 +2743,7 @@ sub get_file {
         ];
     }
     if ( defined($file) ) {    #download
-        my $base_url = $self->{config}->get('general:api_url');
+        my $base_url = $self->{config}->get('global:api_url');
         if (   ( $file =~ /^\Q$base_url\E\/download\/(.*)$/ )
             && ( -d $self->get_shortcut( "%PROJET/" . $1 ) ) )
         {
@@ -2909,7 +2909,7 @@ sub to_content {
     my $self    = shift;
     my $content = '';
     my $type    = 'text/plain';
-    if (   ( ( scalar @{ @{ $self->{errors} } } ) == 0 )
+    if (   ( ( scalar  @{ $self->{errors} } ) == 0 )
         && ( ( keys %{ $self->{data} } ) == 0 ) )
     {
         $content = join( "\n", @{ $self->{messages} } );
@@ -2982,7 +2982,7 @@ sub get_relatif {
 
 sub call {
     my ( $self, $action ) = @_;
-    my $base_url = $self->{config}->get('general:api_url');
+    my $base_url = $self->{config}->get('global:api_url');
     $action =~ /^\Q$base_url\E(.*)$/;
     $self->{action} =$1;
     my $method = $ROUTING{$self->{action}};
