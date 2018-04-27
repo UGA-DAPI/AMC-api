@@ -54,7 +54,8 @@ use AMC::Data;
 use AMC::DataModule::capture ':zone';
 use AMC::DataModule::report ':const';
 use AMC::Scoring;
-
+use AMC::NamesFile;
+use AMC::Export::register;
 use AMC::Config;
 use AMC::CommandeApi;
 use JSON;
@@ -110,7 +111,7 @@ use constant {
     ATTACHMENTS_NAME       => 1,
     ATTACHMENTS_FOREGROUND => 2,
 };
-
+POSIX::setlocale(&POSIX::LC_NUMERIC,"C");
 my $debug      = 0;
 my $debug_file = '';
 if ($debug_file) {
@@ -163,8 +164,8 @@ sub csv_build_0 {
 
 sub csv_build_name {
     my $self = shift;
-    return (  csv_build_0( 'surname', 'nom', 'surname' ) . ' '
-            . csv_build_0( 'name', 'prenom', 'name' ) );
+    return (  $self->csv_build_0( 'surname', 'nom', 'surname' ) . ' '
+            . $self->csv_build_0( 'name', 'prenom', 'name' ) );
 }
 
 sub id2file {
@@ -1052,8 +1053,8 @@ sub valide_liste {
 
     $self->{project}->{_students_list} = AMC::NamesFile::new(
         $fl,
-        'encodage'    => bon_encodage('liste'),
-        'identifiant' => csv_build_name(),
+        'encodage'    => $self->bon_encodage('liste'),
+        'identifiant' => $self->csv_build_name(),
     );
     my ( $err, $errlig ) = $self->{project}->{_students_list}->errors();
 
@@ -1451,7 +1452,7 @@ sub noter_resultat {
         push( @{ $self->{messages} }, __("No marks computed") );
     }
 
-    $self->{data}->{workforce} = $self->{project}->{'_scoring'}->marksCount;
+    $self->{data}->{workforce} = $self->{project}->{'_scoring'}->marks_count;
     $self->{project}->{'_scoring'}->end_transaction('MARK');
 
     my @sortmarks = sort { $a <=> $b } @marks;
@@ -2131,7 +2132,7 @@ sub source_latex_choisir {
         close(OUT);
     }
     elsif ( defined $self->{uploads} ) {
-        my $upload = $req->uploads->[0];
+        my $upload = $self->{uploads}->[0];
         $filetemp = $upload->path;
         if ( $upload->content_type == 'text/plain' ) {
             $ext = '.txt';
@@ -2626,6 +2627,7 @@ sub create_project {
         }
         $self->{config}->open_project($proj);
 	$self->valide_projet();
+	$self->{status}=200;
     }
 
 }
@@ -2732,11 +2734,12 @@ sub new {
         o_dir     => $dir,
     );
     bless $self, $class;
+    $self->{config}->{shortcuts}->set(projects_path=>$self->get_config('rep_projets'));
     my $base_url = $self->{config}->get('api_url');
 
     if ( defined($request) ) {    #not config script
         if ( defined($post) ) {
-            $project_dir .= ":" . $post->{apikey}
+            $project_dir .= "_" . $post->{apikey}
                 if defined( $post->{apikey} );
             $self->{globalkey}
                 = $post->{globalkey} eq
@@ -2744,7 +2747,7 @@ sub new {
                 if defined( $post->{globalkey} );
         }
         elsif ( $request->path_info =~ m|^([^/]*)/([^\.]*)\.(.*)$| ) {
-            $project_dir .= ":" . $1;
+            $project_dir .= "_" . $1;
             $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
                 if ( $3 eq 'jpg' || $3 eq 'png' );
         }
@@ -2756,15 +2759,13 @@ sub new {
                 if ( defined( $post->{apikey} ) ) {
                     my @config_key = values %PARAMS;
                     my @cli_key    = keys %PARAMS;
-                    for my $k ( keys %{$post} ) {
+                    for my $k ( keys %$post ) {
                         $self->set_config( 'project:' . $k, $post->{$k} )
                             if ( defined $config_key[$k] );
                         $self->set_config( 'project:' . $PARAMS{$k},
                             $post->{$k} )
                             if ( defined $cli_key[$k] );
-                        $self->{$k} = $post->{$k}
-                            if ( defined $POSTS[$k] );
-
+                        $self->{$k} = $post->{$k} if ( grep(/$k/, @POSTS) );
                     }
                     $self->{uploads} = $request->uploads
                         if ( defined $request->uploads );
@@ -2844,7 +2845,7 @@ sub get_url {
 sub get_doc {
     my $self = shift;
     for (qw/question solution catalog/) {
-        my $f = $self->get_absolute( 'doc_' . $_ );
+        my $f = $self->{config}->get_absolute( 'doc_' . $_ );
         $self->{data}->{$_}
             = $self->get_url( $self->get_config( 'doc_' . $_ ) )
             if ( -f $f );
@@ -2855,6 +2856,7 @@ sub get_doc {
 
 sub get_export {
     my $self = shift;
+    my $format  = $self->{config}->get('format_export');
     for (qw/CSV ods/) {
         my $ext = "AMC::Export::register::$format"->extension();
         if ( !$ext ) {
@@ -2966,24 +2968,24 @@ sub DESTROY {
 sub to_content {
     my $self    = shift;
     my $content = '';
-    my $type    = 'text/plain';
-    if (   ( ( scalar @{ $self->{errors} } ) == 0 )
-        && ( ( keys %{ $self->{data} } ) == 0 ) )
-    {
-        $content = join( "\n", @{ $self->{messages} } );
+    #my $type    = 'text/plain';
+    #if (   ( ( scalar @{ $self->{errors} } ) == 0 )
+    #    && ( ( keys %{ $self->{data} } ) == 0 ) )
+    #{
+    #    $content = join( "\n", @{ $self->{messages} }.Dumper($self) );
 
-    }
-    else {
+    #}
+    #else {
         $type = 'application/json';
         $self->{status} = 500 if ( ( scalar @{ $self->{errors} } ) > 0 );
         $content = encode_json(
             {   status  => $self->{status},
                 message => join( "\n", @{ $self->{messages} } ),
-                errors  => @{ $self->{errors} },
+                errors  => $self->{errors} ,
                 data    => $self->{data}
             }
         );
-    }
+	#}
     return ( $self->{status}, $type, length($content), $content );
 }
 
