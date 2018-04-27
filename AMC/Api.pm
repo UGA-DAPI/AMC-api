@@ -564,7 +564,7 @@ sub doc_maj {
                         for my $k ( keys %vars ) {
                             if ( $k =~ /^project:(.*)/ ) {
                                 debug "Configuration: $k = $vars{$k}";
-                                $self->set_config->( $k, $vars{$k} );
+                                $self->set_config( $k, $vars{$k} );
                             }
                         }
                     }
@@ -580,7 +580,7 @@ sub doc_maj {
                 elsif ( $c->variable('ensemble') ) {
                     $ap = 'cases';
                 }
-                $self->set_config->( 'annote_position', $ap );
+                $self->set_config( 'annote_position', $ap );
 
                 my $ensemble
                     = $c->variable('ensemble') && !$c->variable('outsidebox');
@@ -615,8 +615,8 @@ sub doc_maj {
                         __ "darkness threshold",
                         $self->{config}->get('seuil')
                     );
-                    $self->set_config->( 'seuil',    0.86 );
-                    $self->set_config->( 'seuil_up', 1.0 );
+                    $self->set_config( 'seuil',    0.86 );
+                    $self->set_config( 'seuil_up', 1.0 );
                 }
             }
             $self->detecte_documents();
@@ -632,7 +632,7 @@ sub sujet_impressions_ok {
 
         if ( !$self->{config}->get('options_impression/repertoire') ) {
             debug "Print to file : no destination...";
-            $self->set_config->( 'options_impression/repertoire', '' );
+            $self->set_config( 'options_impression/repertoire', '' );
         }
         else {
             my $path = $self->{config}
@@ -685,7 +685,7 @@ sub sujet_impressions_ok {
                     "If so, the corresponding option will be set for this project."
                     )
             );
-            $self->set_config->( 'auto_capture_mode', 1 );
+            $self->set_config( 'auto_capture_mode', 1 );
         }
     }
 
@@ -707,7 +707,7 @@ sub sujet_impressions_ok {
                     )
                 );
 
-                $self->set_config->( "print_extract_with", 'pdftk' );
+                $self->set_config( "print_extract_with", 'pdftk' );
             }
             else {
                 push(
@@ -877,7 +877,7 @@ sub check_auto_capture_mode {
         # it can be the case if captures were made with an old AMC
         # version, or if project parameters have not been saved...
         # So we try to detect the correct value from the capture data.
-        $self->set_config->(
+        $self->set_config(
             'auto_capture_mode',
             ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 )
         );
@@ -1038,7 +1038,7 @@ sub valide_liste {
     debug "* valide_liste";
 
     if ( defined( $oo{'set'} ) && !$oo{'nomodif'} ) {
-        $self->set_config->(
+        $self->set_config(
             'listeetudiants',
             $self->{config}->{shortcuts}->relatif( $oo{'set'} )
         );
@@ -1372,7 +1372,7 @@ sub noter_postcorrect {
                 ->set( 'postcorrect_student', $postcorrect_student_min );
             my @c = sort { $a <=> $b }
                 ( keys %{ $postcorrect_ids{$postcorrect_student_min} } );
-            $self->set_config->( 'postcorrect_copy', $c[0] );
+            $self->set_config( 'postcorrect_copy', $c[0] );
         }
 
     }
@@ -1649,13 +1649,13 @@ sub annote_copies {
 
 sub annotate_papers {
     my $self = shift;
-    $self->set_config->( 'regroupement_type', 'STUDENTS' );
+    $self->set_config( 'regroupement_type', 'STUDENTS' );
     $self->annote_copies;
 }
 
 sub annotate_all {
     my $self = shift;
-    $self->set_config->( 'regroupement_type', 'ALL' );
+    $self->set_config( 'regroupement_type', 'ALL' );
     $self->annote_copies;
 }
 
@@ -2042,7 +2042,7 @@ sub valide_source_tex {
     debug "* valide_source_tex";
 
     if ( !$self->{config}->get('filter') ) {
-        $self->set_config->(
+        $self->set_config(
             'filter',
             $self->best_filter_for_file( $self->{config}->get_absolute('texsrc') )
         );
@@ -2144,7 +2144,7 @@ sub source_latex_choisir {
 
     }
     if ( $ext == '.txt' || $ext == '.tex' ) {
-        $self->set_config->(
+        $self->set_config(
             'texsrc',
             $self->{config}->{shortcuts}
                 ->relatif( $filename . $ext, $self->{project}->{'nom'} )
@@ -2212,7 +2212,7 @@ sub source_latex_choisir {
             }
 
             if ($latex) {
-                $self->set_config->(
+                $self->set_config(
                     'texsrc', $self->get_shortcut("%PROJET/$latex")
                 );
                 debug "LaTeX found : $latex";
@@ -2287,7 +2287,7 @@ sub importe_source {
     }
 
     if ( copy_latex( $self->{config}->get_absolute('texsrc'), $dest ) ) {
-        $self->set_config->(
+        $self->set_config(
             'texsrc', $self->{config}->{shortcuts}->relatif($dest)
         );
         $self->valide_source_tex();
@@ -2486,7 +2486,7 @@ sub send_emails {
         }
     }
 
-    $self->set_config->( 'email_col', $col_max )
+    $self->set_config( 'email_col', $col_max )
         if ( !$self->{config}->get('email_col') );
 
     $self->{project}->{'_report'}->begin_read_transaction('emCC');
@@ -2624,7 +2624,8 @@ sub create_project {
                 mkdir($rep);
             }
         }
-        $self->valide_projet();
+        $self->{config}->open_project($proj);
+	$self->valide_projet();
     }
 
 }
@@ -2897,7 +2898,7 @@ sub generate_doc {
 
 sub export_json {
     my $self = shift;
-    $self->set_config->( 'format_export', 'json' );
+    $self->set_config( 'format_export', 'json' );
     $self->exporte;
 }
 
@@ -2905,7 +2906,7 @@ sub export_csv_ods {
     my $self = shift;
 
     for (qw/CSV ods/) {
-        $self->set_config->( 'format_export', $_ );
+        $self->set_config( 'format_export', $_ );
         $self->exporte;
     }
 
