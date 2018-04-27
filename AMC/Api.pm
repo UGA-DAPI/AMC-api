@@ -1131,14 +1131,18 @@ sub check_possible_assoc {
 
     }
     elsif ( defined $self->{uploads} ) {
+        my @upload = ();
+        $self->{uploads}->each( sub { push @uploads, $_[1] } );
+        $filetemp = $uploads[0]->{tempname};
+        
         my $upload = $req->uploads->[0];
         $filetemp = $upload->path;
-        if ( $upload->content_type == 'text/plain' ) {
+        if ( $uploads[0]->{content_type} == 'text/plain' ) {
             my $ext = '.txt';
             move( $filetemp, $dir . $filename . $ext );
             $self->set_config( 'listeetudiants', $filename . $ext );
         }
-        elsif ( $upload->content_type == 'text/csv' ) {
+        elsif ( $uploads[0]->{content_type} == 'text/csv' ) {
             $ext = '.csv';
             move( $filetemp, $dir . $filename . $ext );
             $self->set_config( 'listeetudiants', $filename . $ext );
@@ -2132,13 +2136,14 @@ sub source_latex_choisir {
         close(OUT);
     }
     elsif ( defined $self->{uploads} ) {
-        my $upload = $self->{uploads}->[0];
-        $filetemp = $upload->path;
-        if ( $upload->content_type == 'text/plain' ) {
+        my @upload = ();
+        $self->{uploads}->each( sub { push @uploads, $_[1] } );
+        $filetemp = $uploads[0]->{tempname};
+        if ( $uploads[0]->{content_type} == 'text/plain' ) {
             $ext = '.txt';
             move( $filetemp, $dir . $filename . $ext );
         }
-        elsif ( $upload->content_type == 'application/x-tex' ) {
+        elsif ( $uploads[0]->{content_type} == 'application/x-tex' ) {
             $ext = '.tex';
             move( $filetemp, $dir . $filename . $ext );
         }
