@@ -2031,7 +2031,7 @@ sub unrecognized_delete_all {
 
 sub set_source_tex {
     my $self = shift;
-    valide_source_tex();
+    $self->valide_source_tex();
 }
 
 sub valide_source_tex {
@@ -2734,7 +2734,7 @@ sub new {
             $self->{globalkey}
                 = $post->{globalkey} eq
                 $self->{config}->get('global:api_secret')
-                if defined( $request->{globalkey} );
+                if defined( $post->{globalkey} );
         }
         elsif ( $request->path_info =~ m|^([^/]*)/([^\.]*)\.(.*)$| ) {
             $project_dir .= ":" . $1;
@@ -3041,7 +3041,7 @@ sub get_relatif {
 
 sub call {
     my ( $self, $action ) = @_;
-    my $base_url = $self->{config}->get('api_url');
+    #my $base_url = $self->{config}->get('api_url');
     $action =~ s|/\z||;
     $self->{action} = $action;
     my $method = $ROUTING{$action};
