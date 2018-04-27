@@ -133,6 +133,7 @@ for my $m (@filter_modules) {
 } @filter_modules;
 
 sub best_filter_for_file {
+    my $self = shift;
     my ($file) = @_;
     my $mmax   = '';
     my $max    = -10;
@@ -224,7 +225,7 @@ sub exporte {
             return ();
         }
     }
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "export",
@@ -281,6 +282,7 @@ sub exporte {
 }
 
 sub commande {
+    my $self = shift;
     my (@opts) = @_;
 
     my $c = CommandeApi::new(
@@ -439,7 +441,7 @@ sub doc_maj {
     $mode_s .= 'c' if ( $self->{config}->get('prepare_catalog') );
     $mode_s .= ']';
     $mode_s .= 'k' if ( $self->{config}->get('prepare_indiv_solution') );
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "prepare",
@@ -734,7 +736,7 @@ sub sujet_impressions_ok {
         @o_answer = ( '--answer-first', '--no-split' );
     }
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "imprime",
@@ -822,7 +824,7 @@ sub calcule_mep {
         return;
     }
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "meptex",
@@ -915,7 +917,7 @@ sub analyse_call {
 
         debug "Target orientation: $orientation";
 
-        commande(
+        $self->commande(
             'commande'   => [ "auto-multiple-choice", "getimages", @args ],
             'signal'     => 2,
             'progres.id' => $oo{'progres'},
@@ -985,7 +987,7 @@ sub analyse_call_go {
 
     # call AMC-analyse
 
-    commande(
+    $self->commande(
         'commande'   => [ "auto-multiple-choice", "analyse", @args ],
         'signal'     => 2,
         'texte'      => $oo{'text'},
@@ -1003,7 +1005,7 @@ sub saisie_auto_ok {
 
     clear_old( 'diagnostic', $self->get_shortcut('%PROJET/cr/diagnostic') );
 
-    analyse_call(
+    $self->analyse_call(
         'f'         => \@f,
         'getimages' => 1,
         'copy'     => ( $copie ? $self->get_shortcut('%PROJET/scans/') : '' ),
@@ -1213,7 +1215,7 @@ sub associe_auto {
     my $self = shift;
     return () if ( !$self->check_possible_assoc(1) );
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "association-auto",
@@ -1292,7 +1294,7 @@ sub noter {
         $mode .= 'k' if ( $self->{config}->get('prepare_indiv_solution') );
 
         my $n_copies = $self->{config}->get('nombre_copies');
-        commande(
+        $self->commande(
             'commande' => [
                 "auto-multiple-choice",
                 "prepare",
@@ -1332,7 +1334,7 @@ sub noter_postcorrect {
     my $self = shift;
     my ( $c, %data ) = @_;
 
-    detecte_documents();
+    $self->detecte_documents();
 
     return if ( $data{cancelled} );
 
@@ -1375,7 +1377,7 @@ sub noter_postcorrect {
 
     }
     else {
-        noter_calcul( '', '' );
+        $self->noter_calcul( '', '' );
     }
 }
 
@@ -1390,7 +1392,7 @@ sub noter_calcul {
 
     # computes marks.
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice", "note",
             "--debug",              debug_file(),
@@ -1550,7 +1552,7 @@ sub annote_copies {
         $single_output = __("All_students") . ".pdf";
     }
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "annotate",
@@ -1646,18 +1648,19 @@ sub annote_copies {
 }
 
 sub annotate_papers {
-
+    my $self = shift;
     $self->set_config->( 'regroupement_type', 'STUDENTS' );
     $self->annote_copies;
 }
 
 sub annotate_all {
-
+    my $self = shift;
     $self->set_config->( 'regroupement_type', 'ALL' );
     $self->annote_copies;
 }
 
 sub file_maj {
+    my $self = shift;
     my (@f)     = @_;
     my $present = 1;
     my $oldest  = 0;
@@ -2041,7 +2044,7 @@ sub valide_source_tex {
     if ( !$self->{config}->get('filter') ) {
         $self->set_config->(
             'filter',
-            best_filter_for_file( $self->{config}->get_absolute('texsrc') )
+            $self->best_filter_for_file( $self->{config}->get_absolute('texsrc') )
         );
     }
 
@@ -2049,6 +2052,7 @@ sub valide_source_tex {
 }
 
 sub n_fich {
+    my $self = shift;
     my ($dir) = @_;
 
     if ( opendir( NFICH, $dir ) ) {
@@ -2064,6 +2068,7 @@ sub n_fich {
 }
 
 sub unzip_to_temp {
+    my $self = shift;
     my ($file) = @_;
 
     my $temp_dir = tempdir( DIR => tmpdir(), CLEANUP => 1 );
@@ -2149,9 +2154,9 @@ sub source_latex_choisir {
 
         # cree un repertoire temporaire pour dezipper
 
-        my ( $temp_dir, $rv ) = unzip_to_temp($filetemp);
+        my ( $temp_dir, $rv ) = $self->unzip_to_temp($filetemp);
 
-        my ( $n, $suivant ) = n_fich($temp_dir);
+        my ( $n, $suivant ) = $self->n_fich($temp_dir);
 
         if ( $rv || $n == 0 ) {
             push(
@@ -2169,7 +2174,7 @@ sub source_latex_choisir {
             while ( $n == 1 && -d $suivant ) {
                 debug "Changing root directory : $suivant";
                 $temp_dir = $suivant;
-                ( $n, $suivant ) = n_fich($temp_dir);
+                ( $n, $suivant ) = $self->n_fich($temp_dir);
             }
 
             # bouge les fichiers la ou il faut
@@ -2197,7 +2202,7 @@ sub source_latex_choisir {
                     if ( $oo{'decode'} ) {
                         debug "Decoding $ff...";
                         move( "$temp_dir/$ff", "$temp_dir/$ff.0enc" );
-                        copy_latex( "$temp_dir/$ff.0enc", "$temp_dir/$ff" );
+                        $self->copy_latex( "$temp_dir/$ff.0enc", "$temp_dir/$ff" );
                     }
                 }
                 if ( system( "mv", "$temp_dir/$ff", "$hd/$ff" ) != 0 ) {
@@ -2220,6 +2225,7 @@ sub source_latex_choisir {
 
 # copie en changeant eventuellement d'encodage
 sub copy_latex {
+    my $self = shift;
     my ( $src, $dest ) = @_;
 
     # 1) reperage du inputenc dans le source
@@ -2565,7 +2571,7 @@ sub send_emails {
         push @mailing_args, "--attach", $self->get_shortcut($_);
     }
 
-    commande(
+    $self->commande(
         'commande' => [
             "auto-multiple-choice",
             "mailing",
