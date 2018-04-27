@@ -295,8 +295,8 @@ sub commande {
 }
 
 sub remove_project {
-    my $self  = shift;
-    my ($force) = @_;
+    my $self = shift;
+
     if ( $self->{globalkey} ) {
         push(
             @{ $self->{messages} },
@@ -311,7 +311,7 @@ sub remove_project {
             )
         );
 
-        if ( !$force ) {
+        if ( !$self->{force} ) {
             return;
         }
 
@@ -562,7 +562,7 @@ sub doc_maj {
                         for my $k ( keys %vars ) {
                             if ( $k =~ /^project:(.*)/ ) {
                                 debug "Configuration: $k = $vars{$k}";
-                                $self->{config}->set( $k, $vars{$k} );
+                                $self->set_config->( $k, $vars{$k} );
                             }
                         }
                     }
@@ -578,7 +578,7 @@ sub doc_maj {
                 elsif ( $c->variable('ensemble') ) {
                     $ap = 'cases';
                 }
-                $self->{config}->set( 'annote_position', $ap );
+                $self->set_config->( 'annote_position', $ap );
 
                 my $ensemble
                     = $c->variable('ensemble') && !$c->variable('outsidebox');
@@ -613,8 +613,8 @@ sub doc_maj {
                         __ "darkness threshold",
                         $self->{config}->get('seuil')
                     );
-                    $self->{config}->set( 'seuil',    0.86 );
-                    $self->{config}->set( 'seuil_up', 1.0 );
+                    $self->set_config->( 'seuil',    0.86 );
+                    $self->set_config->( 'seuil_up', 1.0 );
                 }
             }
             $self->detecte_documents();
@@ -630,7 +630,7 @@ sub sujet_impressions_ok {
 
         if ( !$self->{config}->get('options_impression/repertoire') ) {
             debug "Print to file : no destination...";
-            $self->{config}->set( 'options_impression/repertoire', '' );
+            $self->set_config->( 'options_impression/repertoire', '' );
         }
         else {
             my $path = $self->{config}
@@ -683,7 +683,7 @@ sub sujet_impressions_ok {
                     "If so, the corresponding option will be set for this project."
                     )
             );
-            $self->{config}->set( 'auto_capture_mode', 1 );
+            $self->set_config->( 'auto_capture_mode', 1 );
         }
     }
 
@@ -705,7 +705,7 @@ sub sujet_impressions_ok {
                     )
                 );
 
-                $self->{config}->set( "print_extract_with", 'pdftk' );
+                $self->set_config->( "print_extract_with", 'pdftk' );
             }
             else {
                 push(
@@ -875,8 +875,10 @@ sub check_auto_capture_mode {
         # it can be the case if captures were made with an old AMC
         # version, or if project parameters have not been saved...
         # So we try to detect the correct value from the capture data.
-        $self->{config}->set( 'auto_capture_mode',
-            ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 ) );
+        $self->set_config->(
+            'auto_capture_mode',
+            ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 )
+        );
     }
     $self->{project}->{'_capture'}->end_transaction('ckac');
     return ($n);
@@ -1034,8 +1036,10 @@ sub valide_liste {
     debug "* valide_liste";
 
     if ( defined( $oo{'set'} ) && !$oo{'nomodif'} ) {
-        $self->{config}->set( 'listeetudiants',
-            $self->{config}->{shortcuts}->relatif( $oo{'set'} ) );
+        $self->set_config->(
+            'listeetudiants',
+            $self->{config}->{shortcuts}->relatif( $oo{'set'} )
+        );
     }
 
     my $fl = $self->{config}->get_absolute('listeetudiants');
@@ -1106,8 +1110,39 @@ sub valide_liste {
 }
 
 sub check_possible_assoc {
-    my $self = shift;
-    my ($code) = @_;
+    my $self     = shift;
+    my ($code)   = @_;
+    my $filename = 'students_list.txt';
+    my $dir      = $self->get_shortcut('%PROJET');
+
+    # choisir un fichier deja present
+    if ( defined $self->{students} ) {
+        my $content = decode_base64( $self->{file} );
+        open( OUT,
+            ">:encoding(" . $self->{'out.encodage'} . ")",
+            $dir . $filename
+        );
+        print OUT $content;
+        close(OUT);
+        $self->set_config( 'listeetudiants', $filename );
+
+    }
+    elsif ( defined $self->{uploads} ) {
+        my $upload = $req->uploads->[0];
+        $filetemp = $upload->path;
+        if ( $upload->content_type == 'text/plain' ) {
+            my $ext = '.txt';
+            move( $filetemp, $dir . $filename . $ext );
+            $self->set_config( 'listeetudiants', $filename . $ext );
+        }
+        elsif ( $upload->content_type == 'text/csv' ) {
+            $ext = '.csv';
+            move( $filetemp, $dir . $filename . $ext );
+            $self->set_config( 'listeetudiants', $filename . $ext );
+        }
+
+    }
+
     if ( !-s $self->{config}->get_absolute('listeetudiants') ) {
         push(
             @{ $self->{messages} },
@@ -1128,6 +1163,7 @@ sub check_possible_assoc {
             __( "Please choose a key from primary keys in students list before association."
             )
         );
+        $self->set_config( 'liste_key', 'id' );
 
     }
     elsif ( $code && !$self->{config}->get('assoc_code') ) {
@@ -1175,7 +1211,7 @@ sub associe {
 # automatic association
 sub associe_auto {
     my $self = shift;
-    return () if ( !check_possible_assoc(1) );
+    return () if ( !$self->check_possible_assoc(1) );
 
     commande(
         'commande' => [
@@ -1334,7 +1370,7 @@ sub noter_postcorrect {
                 ->set( 'postcorrect_student', $postcorrect_student_min );
             my @c = sort { $a <=> $b }
                 ( keys %{ $postcorrect_ids{$postcorrect_student_min} } );
-            $self->{config}->set( 'postcorrect_copy', $c[0] );
+            $self->set_config->( 'postcorrect_copy', $c[0] );
         }
 
     }
@@ -1403,7 +1439,7 @@ sub noter_calcul {
 sub noter_resultat {
     my $self = shift;
     $self->{project}->{'_scoring'}->begin_read_transaction('MARK');
-    my $avg = $self->{project}->{'_scoring'}->average_mark;
+    my $avg   = $self->{project}->{'_scoring'}->average_mark;
     my @marks = $self->{project}->{'_scoring'}->marks;
 
     if ( defined($avg) ) {
@@ -1416,18 +1452,20 @@ sub noter_resultat {
     $self->{data}->{workforce} = $self->{project}->{'_scoring'}->marksCount;
     $self->{project}->{'_scoring'}->end_transaction('MARK');
 
-    my @sortmarks = sort  {$a <=> $b} @marks;
-    my $mid = int @sortmarks/2;
-    if (@sortmarks % 2) {
-        $self->{data}->{median} = $sortmarks[ $mid ];
-    } else {
-        $self->{data}->{median} = ($sortmarks[$mid-1] + $sortmarks[$mid])/2;
-    } 
+    my @sortmarks = sort { $a <=> $b } @marks;
+    my $mid = int @sortmarks / 2;
+    if ( @sortmarks % 2 ) {
+        $self->{data}->{median} = $sortmarks[$mid];
+    }
+    else {
+        $self->{data}->{median}
+            = ( $sortmarks[ $mid - 1 ] + $sortmarks[$mid] ) / 2;
+    }
     my %counts;
     ++$counts{$_} for @marks;
     my @mode = sort { $counts{$a} <=> $counts{$b} } keys %counts;
-    $self->{data}->{mode} = $mode[0];
-    $self->{data}->{range} = $sortmarks[0]. '-'. $sortmarks[-1]; 
+    $self->{data}->{mode}  = $mode[0];
+    $self->{data}->{range} = $sortmarks[0] . '-' . $sortmarks[-1];
 
 }
 
@@ -1494,7 +1532,7 @@ sub select_students {
             idnumber => $idnumber,
             type     => $type,
             url      => $self->get_url(
-                "name-" . studentids_string_filename(@sc) . ".jpg",'image'
+                "name-" . studentids_string_filename(@sc) . ".jpg", 'image'
             ),
         );
         push @{ $self->{data} }, %iter;
@@ -1609,13 +1647,13 @@ sub annote_copies {
 
 sub annotate_papers {
 
-    $self->{config}->set( 'project:regroupement_type', 'STUDENTS' );
+    $self->set_config->( 'regroupement_type', 'STUDENTS' );
     $self->annote_copies;
 }
 
 sub annotate_all {
 
-    $self->{config}->set( 'project:regroupement_type', 'ALL' );
+    $self->set_config->( 'regroupement_type', 'ALL' );
     $self->annote_copies;
 }
 
@@ -2001,8 +2039,10 @@ sub valide_source_tex {
     debug "* valide_source_tex";
 
     if ( !$self->{config}->get('filter') ) {
-        $self->{config}->set( 'filter',
-            best_filter_for_file( $self->{config}->get_absolute('texsrc') ) );
+        $self->set_config->(
+            'filter',
+            best_filter_for_file( $self->{config}->get_absolute('texsrc') )
+        );
     }
 
     $self->detecte_documents();
@@ -2099,9 +2139,11 @@ sub source_latex_choisir {
 
     }
     if ( $ext == '.txt' || $ext == '.tex' ) {
-        $self->{config}->set( 'project:texsrc',
+        $self->set_config->(
+            'texsrc',
             $self->{config}->{shortcuts}
-                ->relatif( $filename . $ext, $self->{project}->{'nom'} ) );
+                ->relatif( $filename . $ext, $self->{project}->{'nom'} )
+        );
     }
     else {
 
@@ -2165,8 +2207,9 @@ sub source_latex_choisir {
             }
 
             if ($latex) {
-                $self->{config}->set( 'project:texsrc',
-                    $self->get_shortcut("%PROJET/$latex") );
+                $self->set_config->(
+                    'texsrc', $self->get_shortcut("%PROJET/$latex")
+                );
                 debug "LaTeX found : $latex";
             }
         }
@@ -2238,8 +2281,9 @@ sub importe_source {
     }
 
     if ( copy_latex( $self->{config}->get_absolute('texsrc'), $dest ) ) {
-        $self->{config}->set( 'project:texsrc',
-            $self->{config}->{shortcuts}->relatif($dest) );
+        $self->set_config->(
+            'texsrc', $self->{config}->{shortcuts}->relatif($dest)
+        );
         $self->valide_source_tex();
         push(
             @{ $self->{messages} },
@@ -2436,7 +2480,7 @@ sub send_emails {
         }
     }
 
-    $self->{config}->set( 'project:email_col', $col_max )
+    $self->set_config->( 'email_col', $col_max )
         if ( !$self->{config}->get('email_col') );
 
     $self->{project}->{'_report'}->begin_read_transaction('emCC');
@@ -2666,12 +2710,13 @@ my %PARAMS = (
     "verdict-question"           => 'verdict_q',
     "verdict-question-cancelled" => 'verdict_qc'
 );
-my @POSTS = ( 'filecode', 'idnumber', 'students', 'file', 'url_return' );
+my @POSTS
+    = ( 'filecode', 'idnumber', 'students', 'file', 'url_return', 'force' );
 
 sub new {
     my $class = shift;
     my ( $dir, $request ) = @_;
-    my $post = $request->body_parameters->as_hashref;
+    my $post        = $request->body_parameters->as_hashref;
     my $project_dir = $request->address;
     my $self = { status => 200, errors => [], messages => [], data => {} };
     $self->{config} = AMC::Config->new(
@@ -2681,6 +2726,7 @@ sub new {
     );
     bless $self, $class;
     my $base_url = $self->{config}->get('api_url');
+
     if ( defined($request) ) {    #not config script
         if ( defined($post) ) {
             $project_dir .= ":" . $post->{apikey}
@@ -2690,9 +2736,7 @@ sub new {
                 $self->{config}->get('global:api_secret')
                 if defined( $request->{globalkey} );
         }
-        elsif ( $request->path_info
-            =~ m|^([^/]*)/([^\.]*)\.(.*)$| )
-        {
+        elsif ( $request->path_info =~ m|^([^/]*)/([^\.]*)\.(.*)$| ) {
             $project_dir .= ":" . $1;
             $self->{wanted_file} = "%PROJET/cr/" . $2 . $3
                 if ( $3 eq 'jpg' || $3 eq 'png' );
@@ -2731,10 +2775,11 @@ sub new {
                 $self->{status} = 403;
                 push( @{ $self->{messages} }, "Forbidden" );
             }
-        }else{
-                $self->{status} = 404;
-                push( @{ $self->{messages} }, "Not Found" );
-	}
+        }
+        else {
+            $self->{status} = 404;
+            push( @{ $self->{messages} }, "Not Found" );
+        }
     }
     return $self;
 }
@@ -2782,7 +2827,7 @@ sub get_url {
     if ( $type == "image" ) {    #image
         $url .= "/image/" . $self->{apikey} . "/";
     }
-    else { #download
+    else {                       #download
         $url .= "/download/";
     }
     $url .= $file;
@@ -2804,16 +2849,17 @@ sub get_doc {
 sub get_export {
     my $self = shift;
     for (qw/CSV ods/) {
-        my $ext     = "AMC::Export::register::$format"->extension();
+        my $ext = "AMC::Export::register::$format"->extension();
         if ( !$ext ) {
             $ext = lc($format);
         }
         my $code = $self->{config}->get('code_examen');
         $code = 'grades' if ( !$code );
         utf8::encode($code);
-        my $f = $self->{config}->get_shortcut( '%PROJET/exports/' . $code . $ext );
-        $self->{data}->{$ext}
-            = $self->get_url( '/exports/' . $code . $ext ) if ( -f $f );
+        my $f = $self->{config}
+            ->get_shortcut( '%PROJET/exports/' . $code . $ext );
+        $self->{data}->{$ext} = $self->get_url( '/exports/' . $code . $ext )
+            if ( -f $f );
     }
 }
 
@@ -2845,7 +2891,7 @@ sub generate_doc {
 
 sub export_json {
     my $self = shift;
-    $self->{config}->set( 'project:format_export', 'json' );
+    $self->set_config->( 'format_export', 'json' );
     $self->exporte;
 }
 
@@ -2853,7 +2899,7 @@ sub export_csv_ods {
     my $self = shift;
 
     for (qw/CSV ods/) {
-        $self->{config}->set( 'project:format_export', $_ );
+        $self->set_config->( 'format_export', $_ );
         $self->exporte;
     }
 
@@ -2903,7 +2949,8 @@ sub DESTROY {
 
         $self->{config}->close_project();
 
-    } else {
+    }
+    else {
         $self->{config}->save();
     }
     return (1);
@@ -2913,7 +2960,7 @@ sub to_content {
     my $self    = shift;
     my $content = '';
     my $type    = 'text/plain';
-    if (   ( ( scalar  @{ $self->{errors} } ) == 0 )
+    if (   ( ( scalar @{ $self->{errors} } ) == 0 )
         && ( ( keys %{ $self->{data} } ) == 0 ) )
     {
         $content = join( "\n", @{ $self->{messages} } );
@@ -2932,15 +2979,20 @@ sub to_content {
     }
     return ( $self->{status}, $type, length($content), $content );
 }
-sub redirect {
-    my $self    = shift;
 
-    return (0) if (!defined $self->{url_return});
-    my $uri = URI->new( $self->{url_return} );
+sub redirect {
+    my $self = shift;
+
+    return (0) if ( !defined $self->{url_return} );
+    my $uri    = URI->new( $self->{url_return} );
     my $action = $self->{action};
-    $action =~s/\//_/g;
-    $uri->query_form(action =>$action, status =>$self->{status}, message=>join( "\n", @{ $self->{messages} }));
-    
+    $action =~ s/\//_/g;
+    $uri->query_form(
+        action  => $action,
+        status  => $self->{status},
+        message => join( "\n", @{ $self->{messages} } )
+    );
+
     return $uri->as_string;
 }
 
@@ -2960,7 +3012,7 @@ sub sheet_delete {
 }
 
 sub get_api_url {
-    my ($dir)    = @_;
+    my ($dir) = @_;
     my $config = AMC::Config->new(
         shortcuts => AMC::Path::new( home_dir => $dir ),
         home_dir  => $dir,
@@ -2971,7 +3023,10 @@ sub get_api_url {
 
 sub set_config {
     my ( $self, $key, $value ) = @_;
-    $self->{config}->set( 'project:' . $key, $value );
+    if ( $key !~ /([a-z]+):(.*)/ ) {
+        $key = 'project:' . $2;
+    }
+    $self->{config}->set( $key, $value );
 }
 
 sub get_shortcut {
@@ -2988,7 +3043,7 @@ sub call {
     my ( $self, $action ) = @_;
     my $base_url = $self->{config}->get('api_url');
     $action =~ s|/\z||;
-    $self->{action} =$action;
+    $self->{action} = $action;
     my $method = $ROUTING{$action};
     if ( $self->can($method) ) {
         $self->$method;
