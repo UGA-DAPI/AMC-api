@@ -55,7 +55,6 @@ use AMC::DataModule::capture ':zone';
 use AMC::DataModule::report ':const';
 use AMC::Scoring;
 use AMC::NamesFile;
-use AMC::Export::register;
 use AMC::Config;
 use AMC::CommandeApi;
 use JSON;
@@ -113,7 +112,7 @@ use constant {
 };
 POSIX::setlocale(&POSIX::LC_NUMERIC,"C");
 my $debug      = 0;
-my $debug_file = '';
+my $debug_file = '/tmp/amc.debug';
 if ($debug_file) {
     $debug = $debug_file;
 }
@@ -121,7 +120,17 @@ if ($debug_file) {
 if ($debug) {
     set_debug_mode($debug);
 }
-
+sub set_debug_mode {
+  my ($debug)=@_;
+  set_debug($debug);
+  if($debug) {
+    my $date=strftime("%c",localtime());
+    debug ('#' x 40);
+    debug "# DEBUG - $date";
+    debug ('#' x 40);
+    #debug "GUI module is located at ".__FILE__;
+  }
+}
 # Reads filter plugins list
 
 my @filter_modules = perl_module_search('AMC::Filter::register');
@@ -134,7 +143,7 @@ for my $m (@filter_modules) {
 } @filter_modules;
 
 sub best_filter_for_file {
-    my $self = shift;
+    #my $self = shift;
     my ($file) = @_;
     my $mmax   = '';
     my $max    = -10;
@@ -286,7 +295,7 @@ sub commande {
     my $self = shift;
     my (@opts) = @_;
 
-    my $c = CommandeApi::new(
+    my $c = AMC::CommandeApi::new(
         'finw' => sub {
             my $c = shift;
 
@@ -332,11 +341,21 @@ sub remove_project {
         }
     }
 }
+
+sub format_markup {
+  my ($t)=@_;
+  $t =~ s/\&/\&amp;/g;
+  return($t);
+}
+
+sub mini {($_[0]<$_[1] ? $_[0] : $_[1])}
+
 my %component_name = (
     'latex_packages' => __("LaTeX packages:"),
     'commands'       => __("Commands:"),
     'fonts'          => __("Fonts:"),
 );
+
 
 sub doc_maj {
     my ($self) = (@_);
@@ -389,7 +408,7 @@ sub doc_maj {
     # check for filter dependencies
 
     my $filter_register
-        = ( "AMC::Filter::register::" . $self->{config}->get('filter') )
+        = ( "AMC::Filter::register::" . $self->get_config('filter') )
         ->new();
 
     my $check = $filter_register->check_dependencies();
@@ -2046,12 +2065,12 @@ sub valide_source_tex {
     my $self = shift;
     debug "* valide_source_tex";
 
-    if ( !$self->{config}->get('filter') ) {
+    #if ( !$self->get_config('filter') ) {
         $self->set_config(
-            'filter',
-            $self->best_filter_for_file( $self->{config}->get_absolute('texsrc') )
+            'project:filter',
+            best_filter_for_file( $self->{config}->get_absolute('texsrc') )
         );
-    }
+    #}
 
     $self->detecte_documents();
 }
@@ -2113,14 +2132,14 @@ sub source_latex_choisir {
     # choisir un fichier deja present
     if ( defined $self->{file} ) {
         my $content = decode_base64( $self->{file} );
-        if ($h
-            && (   $h =~ /\\usepackage.*\{automultiplechoice\}/
-                || $h =~ /\\documentclass\{/ )
+        if ($content
+            && (   $content =~ /\\usepackage.*\{automultiplechoice\}/
+                || $content =~ /\\documentclass\{/ )
             )
         {
             $ext = '.tex';
         }
-        elsif ( $h && $h =~ /^\s*\#\s*AMC-TXT/ ) {
+        elsif ( $content && $content =~ /^\s*\#\s*AMC-TXT/ ) {
             $ext = '.txt';
         }
         else {
@@ -2139,22 +2158,20 @@ sub source_latex_choisir {
         my @upload = ();
         $self->{uploads}->each( sub { push @uploads, $_[1] } );
         $filetemp = $uploads[0]->{tempname};
-        if ( $uploads[0]->{content_type} == 'text/plain' ) {
-            $ext = '.txt';
+        $filetemp =~ m|(\.\w*)\z|;
+        $ext= $1;
+        #if ( $uploads[0]->{content_type} == 'text/plain' ) {
+        #    $ext = '.txt';
+        #    move( $filetemp, $dir . $filename . $ext );
+        #}
+        #elsif ( $uploads[0]->{content_type} == 'application/x-tex' ) {
+        #    $ext = '.tex';
             move( $filetemp, $dir . $filename . $ext );
-        }
-        elsif ( $uploads[0]->{content_type} == 'application/x-tex' ) {
-            $ext = '.tex';
-            move( $filetemp, $dir . $filename . $ext );
-        }
+        #}
 
     }
-    if ( $ext == '.txt' || $ext == '.tex' ) {
-        $self->set_config(
-            'texsrc',
-            $self->{config}->{shortcuts}
-                ->relatif( $filename . $ext, $self->{project}->{'nom'} )
-        );
+    if ( $ext ne  '.zip'  ) {
+        $self->set_config('project:texsrc', $filename . $ext );
     }
     else {
 
@@ -2761,6 +2778,7 @@ sub new {
             $self->{config}->{shortcuts}->set( project_name => $project_dir );
             if ( -d $self->get_shortcut('%PROJET') ) {
                 $self->{config}->open_project($project_dir);
+		$self->valide_projet();
                 if ( defined( $post->{apikey} ) ) {
                     my @config_key = values %PARAMS;
                     my @cli_key    = keys %PARAMS;
@@ -2775,7 +2793,7 @@ sub new {
                     $self->{uploads} = $request->uploads
                         if ( defined $request->uploads );
                     $self->{server}
-                        = $request->scheme . "://" . $request->uri->host;
+                        = $request->scheme . "://" . $request->uri->host .  $base_url;
                 }
             }
             elsif ( defined( $self->{globalkey} )
@@ -2806,11 +2824,10 @@ sub get_file {
         ];
     }
     if ( defined($file) ) {    #download
-        my $base_url = $self->{config}->get('global:api_url');
-        if (   ( $file =~ /^\Q$base_url\E\/download\/(.*)$/ )
-            && ( -d $self->get_shortcut( "%PROJET/" . $1 ) ) )
+        #my $base_url = $self->{config}->get('global:api_url');
+        if ( -f $self->get_shortcut( "%PROJET/" . $file )  )
         {
-            return $self->get_shortcut( $self->{wanted_file} );
+            return { 'file' => $self->get_shortcut( "%PROJET/" . $file )};
         }
         else {
             return [
@@ -2821,9 +2838,9 @@ sub get_file {
         }
     }
     elsif ( defined( $self->{wanted_file} )
-        && ( -d $self->get_shortcut( $self->{wanted_file} ) ) )
+        && ( -f $self->get_shortcut( $self->{wanted_file} ) ) )
     {    #image
-        return $self->get_shortcut( $self->{wanted_file} );
+        return { 'file' => $self->get_shortcut( $self->{wanted_file} )};
     }
     else {
         return [
@@ -2837,7 +2854,7 @@ sub get_file {
 sub get_url {
     my ( $self, $file, $type ) = (@_);
     my $url = $self->{server};
-    if ( $type == "image" ) {    #image
+    if ( $type eq "image" ) {    #image
         $url .= "/image/" . $self->{apikey} . "/";
     }
     else {                       #download
@@ -2985,7 +3002,7 @@ sub to_content {
         $self->{status} = 500 if ( ( scalar @{ $self->{errors} } ) > 0 );
         $content = encode_json(
             {   status  => $self->{status},
-                message => join( "\n", @{ $self->{messages} } ),
+                message => join( "\n", @{ $self->{messages}}  ),
                 errors  => $self->{errors} ,
                 data    => $self->{data}
             }

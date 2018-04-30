@@ -35,7 +35,8 @@ sub new {
         'o'        => {},
         'clear'    => 1,
 
-        'messages'  => {},
+        'log' => [],
+	'messages'  => {},
         'variables' => {},
 
         'pid' => '',
@@ -62,17 +63,22 @@ sub proc_pid {
 
 sub erreurs {
     my ($self)=(@_);
-    return($self->{'messages'}->{'ERR'});
+    return(@{$self->{'messages'}->{'ERR'}});
 }
 
 sub warnings {
     my ($self)=(@_);
-    return($self->{'messages'}->{'WARN'});
+    return(@{$self->{'messages'}->{'WARN'}});
 }
 
 sub variables {
     my ($self)=(@_);
     return(%{$self->{'variables'}});
+}
+
+sub logs {
+    my ($self)=(@_);
+    return(@{$self->{'log'}});
 }
 
 sub variable {
@@ -99,17 +105,18 @@ sub execute {
     $self->{'pid'} = open($self->{'fh'},"-|",@{$self->{'commande'}});
     if(defined($self->{'pid'})) {
 
-	$self->{'log'}->get_buffer()->set_text('') if($self->{'clear'});
+	$self->{'log'}=[] if($self->{'clear'});
 
     } else {
     print STDERR "ERROR execing command\n".join(' ',@{$self->{'commande'}})."\n";
     }
     my $fh=$self->{'fh'};
     while( my $line = decode("utf8",<$fh>) ) {
+	  push @{$self->{'log'}},  $line;
 	  if($line =~ /^(ERR|INFO|WARN)/) {
 	    chomp(my $lc=$line);
 	    $lc =~ s/^(ERR|INFO|WARN)[:>]\s*//;
-	    $self->{'message'}->{$1}=$lc;
+	    $self->{'messages'}->{$1}=$lc;
 	  }
 	  if($line =~ /^VAR:\s*([^=]+)=(.*)/) {
 	    $self->{'variables'}->{$1}=$2;

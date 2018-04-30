@@ -35,7 +35,7 @@ my $img = sub {
     my $api     = AMC::Api->new( $dir, $request );
     my $file    = $api->get_file();
     $api = undef;
-    Plack::App::File->new( file => $file )->to_app;
+    Plack::App::File->new( $file )->to_app;
 };
 
 my $download = sub {
@@ -43,7 +43,7 @@ my $download = sub {
     my $api  = AMC::Api->new( $dir, $request);
     my $file = $api->get_file( $request->path_info );
     $api = undef;
-    Plack::App::File->new( file => $file )->to_app;
+    Plack::App::File->new( $file )->to_app;
 };
 
 my $process = sub {
