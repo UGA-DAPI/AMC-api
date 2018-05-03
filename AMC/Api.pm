@@ -2850,6 +2850,10 @@ sub get_file {
     }
 
 }
+sub get_root {
+    my  $self = shift;
+    return $self->get_shortcut( "%PROJET/" );
+}
 
 sub get_url {
     my ( $self, $file, $type ) = (@_);

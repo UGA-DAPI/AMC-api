@@ -31,19 +31,22 @@ use AMC::Api;
 my $dir    = cwd;
 my $config = AMC::Api::get_api_url($dir);
 my $img = sub {
-    my $request = Plack::Request->new(shift);
+    my $env = shift;
+    my $request = Plack::Request->new($env);
     my $api     = AMC::Api->new( $dir, $request );
     my $file    = $api->get_file();
     $api = undef;
-    Plack::App::File->new( $file )->to_app;
+    Plack::App::File->new( $env, $file )->response_cb;
 };
 
 my $download = sub {
-    my $request = Plack::Request->new(shift);
+    my $env = shift;
+    my $request = Plack::Request->new($env);
     my $api  = AMC::Api->new( $dir, $request);
-    my $file = $api->get_file( $request->path_info );
+    #my $file = $api->get_file( $request->path_info );
+    my $root = $api->get_root();
     $api = undef;
-    Plack::App::File->new( $file )->to_app;
+    Plack::App::File->new($env, root => $root )->response_cb;
 };
 
 my $process = sub {
