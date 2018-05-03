@@ -110,7 +110,7 @@ use constant {
     ATTACHMENTS_NAME       => 1,
     ATTACHMENTS_FOREGROUND => 2,
 };
-POSIX::setlocale(&POSIX::LC_NUMERIC,"C");
+POSIX::setlocale( &POSIX::LC_NUMERIC, "C" );
 my $debug      = 0;
 my $debug_file = '/tmp/amc.debug';
 if ($debug_file) {
@@ -120,17 +120,20 @@ if ($debug_file) {
 if ($debug) {
     set_debug_mode($debug);
 }
+
 sub set_debug_mode {
-  my ($debug)=@_;
-  set_debug($debug);
-  if($debug) {
-    my $date=strftime("%c",localtime());
-    debug ('#' x 40);
-    debug "# DEBUG - $date";
-    debug ('#' x 40);
-    #debug "GUI module is located at ".__FILE__;
-  }
+    my ($debug) = @_;
+    set_debug($debug);
+    if ($debug) {
+        my $date = strftime( "%c", localtime() );
+        debug( '#' x 40 );
+        debug "# DEBUG - $date";
+        debug( '#' x 40 );
+
+        #debug "GUI module is located at ".__FILE__;
+    }
 }
+
 # Reads filter plugins list
 
 my @filter_modules = perl_module_search('AMC::Filter::register');
@@ -143,6 +146,7 @@ for my $m (@filter_modules) {
 } @filter_modules;
 
 sub best_filter_for_file {
+
     #my $self = shift;
     my ($file) = @_;
     my $mmax   = '';
@@ -343,19 +347,18 @@ sub remove_project {
 }
 
 sub format_markup {
-  my ($t)=@_;
-  $t =~ s/\&/\&amp;/g;
-  return($t);
+    my ($t) = @_;
+    $t =~ s/\&/\&amp;/g;
+    return ($t);
 }
 
-sub mini {($_[0]<$_[1] ? $_[0] : $_[1])}
+sub mini { ( $_[0] < $_[1] ? $_[0] : $_[1] ) }
 
 my %component_name = (
     'latex_packages' => __("LaTeX packages:"),
     'commands'       => __("Commands:"),
     'fonts'          => __("Fonts:"),
 );
-
 
 sub doc_maj {
     my ($self) = (@_);
@@ -408,8 +411,7 @@ sub doc_maj {
     # check for filter dependencies
 
     my $filter_register
-        = ( "AMC::Filter::register::" . $self->get_config('filter') )
-        ->new();
+        = ( "AMC::Filter::register::" . $self->get_config('filter') )->new();
 
     my $check = $filter_register->check_dependencies();
 
@@ -897,10 +899,8 @@ sub check_auto_capture_mode {
         # it can be the case if captures were made with an old AMC
         # version, or if project parameters have not been saved...
         # So we try to detect the correct value from the capture data.
-        $self->set_config(
-            'auto_capture_mode',
-            ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 )
-        );
+        $self->set_config( 'auto_capture_mode',
+            ( $self->{project}->{'_capture'}->n_photocopy() > 0 ? 1 : 0 ) );
     }
     $self->{project}->{'_capture'}->end_transaction('ckac');
     return ($n);
@@ -1058,10 +1058,8 @@ sub valide_liste {
     debug "* valide_liste";
 
     if ( defined( $oo{'set'} ) && !$oo{'nomodif'} ) {
-        $self->set_config(
-            'listeetudiants',
-            $self->{config}->{shortcuts}->relatif( $oo{'set'} )
-        );
+        $self->set_config( 'listeetudiants',
+            $self->{config}->{shortcuts}->relatif( $oo{'set'} ) );
     }
 
     my $fl = $self->{config}->get_absolute('listeetudiants');
@@ -1153,7 +1151,7 @@ sub check_possible_assoc {
         my @upload = ();
         $self->{uploads}->each( sub { push @uploads, $_[1] } );
         $filetemp = $uploads[0]->{tempname};
-        
+
         my $upload = $req->uploads->[0];
         $filetemp = $upload->path;
         if ( $uploads[0]->{content_type} == 'text/plain' ) {
@@ -1684,7 +1682,7 @@ sub annotate_all {
 }
 
 sub file_maj {
-    my $self = shift;
+    my $self    = shift;
     my (@f)     = @_;
     my $present = 1;
     my $oldest  = 0;
@@ -2066,10 +2064,9 @@ sub valide_source_tex {
     debug "* valide_source_tex";
 
     #if ( !$self->get_config('filter') ) {
-        $self->set_config(
-            'project:filter',
-            best_filter_for_file( $self->{config}->get_absolute('texsrc') )
-        );
+    $self->set_config( 'project:filter',
+        best_filter_for_file( $self->{config}->get_absolute('texsrc') ) );
+
     #}
 
     $self->detecte_documents();
@@ -2159,19 +2156,12 @@ sub source_latex_choisir {
         $self->{uploads}->each( sub { push @uploads, $_[1] } );
         $filetemp = $uploads[0]->{tempname};
         $filetemp =~ m|(\.\w*)\z|;
-        $ext= $1;
-        #if ( $uploads[0]->{content_type} == 'text/plain' ) {
-        #    $ext = '.txt';
-        #    move( $filetemp, $dir . $filename . $ext );
-        #}
-        #elsif ( $uploads[0]->{content_type} == 'application/x-tex' ) {
-        #    $ext = '.tex';
-            move( $filetemp, $dir . $filename . $ext );
-        #}
+        $ext = $1;
 
     }
-    if ( $ext ne  '.zip'  ) {
-        $self->set_config('project:texsrc', $filename . $ext );
+    if ( $ext ne '.zip' ) {
+        move( $filetemp, $dir . $filename . $ext );
+        $self->set_config( 'project:texsrc', $filename . $ext );
     }
     else {
 
@@ -2225,7 +2215,8 @@ sub source_latex_choisir {
                     if ( $oo{'decode'} ) {
                         debug "Decoding $ff...";
                         move( "$temp_dir/$ff", "$temp_dir/$ff.0enc" );
-                        $self->copy_latex( "$temp_dir/$ff.0enc", "$temp_dir/$ff" );
+                        $self->copy_latex( "$temp_dir/$ff.0enc",
+                            "$temp_dir/$ff" );
                     }
                 }
                 if ( system( "mv", "$temp_dir/$ff", "$hd/$ff" ) != 0 ) {
@@ -2235,9 +2226,8 @@ sub source_latex_choisir {
             }
 
             if ($latex) {
-                $self->set_config(
-                    'texsrc', $self->get_shortcut("%PROJET/$latex")
-                );
+                $self->set_config( 'texsrc',
+                    $self->get_shortcut("%PROJET/$latex") );
                 debug "LaTeX found : $latex";
             }
         }
@@ -2310,9 +2300,8 @@ sub importe_source {
     }
 
     if ( copy_latex( $self->{config}->get_absolute('texsrc'), $dest ) ) {
-        $self->set_config(
-            'texsrc', $self->{config}->{shortcuts}->relatif($dest)
-        );
+        $self->set_config( 'texsrc',
+            $self->{config}->{shortcuts}->relatif($dest) );
         $self->valide_source_tex();
         push(
             @{ $self->{messages} },
@@ -2648,8 +2637,8 @@ sub create_project {
             }
         }
         $self->{config}->open_project($proj);
-	$self->valide_projet();
-	$self->{status}=200;
+        $self->valide_projet();
+        $self->{status} = 200;
     }
 
 }
@@ -2743,6 +2732,13 @@ my %PARAMS = (
 );
 my @POSTS
     = ( 'filecode', 'idnumber', 'students', 'file', 'url_return', 'force' );
+my %MIME = (
+    "zip" => '  application/zip',
+    "tex" => 'application/x-tex',
+    "png" => 'image/png',
+    "jpg" => 'image/jpeg',
+    "pdf" => 'application/pdf'
+);
 
 sub new {
     my $class = shift;
@@ -2756,7 +2752,8 @@ sub new {
         o_dir     => $dir,
     );
     bless $self, $class;
-    $self->{config}->{shortcuts}->set(projects_path=>$self->get_config('rep_projets'));
+    $self->{config}->{shortcuts}
+        ->set( projects_path => $self->get_config('rep_projets') );
     my $base_url = $self->{config}->get('api_url');
 
     if ( defined($request) ) {    #not config script
@@ -2778,7 +2775,7 @@ sub new {
             $self->{config}->{shortcuts}->set( project_name => $project_dir );
             if ( -d $self->get_shortcut('%PROJET') ) {
                 $self->{config}->open_project($project_dir);
-		$self->valide_projet();
+                $self->valide_projet();
                 if ( defined( $post->{apikey} ) ) {
                     my @config_key = values %PARAMS;
                     my @cli_key    = keys %PARAMS;
@@ -2788,71 +2785,35 @@ sub new {
                         $self->set_config( 'project:' . $PARAMS{$k},
                             $post->{$k} )
                             if ( defined $cli_key[$k] );
-                        $self->{$k} = $post->{$k} if ( grep(/$k/, @POSTS) );
+                        $self->{$k} = $post->{$k} if ( grep( /$k/, @POSTS ) );
                     }
                     $self->{uploads} = $request->uploads
                         if ( defined $request->uploads );
                     $self->{server}
-                        = $request->scheme . "://" . $request->uri->host .  $base_url;
+                        = $request->scheme . "://"
+                        . $request->uri->host
+                        . $base_url;
                 }
             }
             elsif ( defined( $self->{globalkey} )
                 && $self->{globalkey} )
             {
                 $self->{status} = 404;
-                push( @{ $self->{messages} }, "Not Found" );
             }
             else {
                 $self->{status} = 403;
-                push( @{ $self->{messages} }, "Forbidden" );
             }
         }
         else {
             $self->{status} = 404;
-            push( @{ $self->{messages} }, "Not Found" );
         }
     }
     return $self;
 }
 
-sub get_file {
-    my ( $self, $file ) = (@_);
-    if ( $self->{status} == 403 ) {
-        return [
-            403, [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
-            ['forbidden']
-        ];
-    }
-    if ( defined($file) ) {    #download
-        #my $base_url = $self->{config}->get('global:api_url');
-        if ( -f $self->get_shortcut( "%PROJET/" . $file )  )
-        {
-            return { 'file' => $self->get_shortcut( "%PROJET/" . $file )};
-        }
-        else {
-            return [
-                404,
-                [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
-                ['not found']
-            ];
-        }
-    }
-    elsif ( defined( $self->{wanted_file} )
-        && ( -f $self->get_shortcut( $self->{wanted_file} ) ) )
-    {    #image
-        return { 'file' => $self->get_shortcut( $self->{wanted_file} )};
-    }
-    else {
-        return [
-            404, [ 'Content-Type' => 'text/plain', 'Content-Length' => 9 ],
-            ['not found']
-        ];
-    }
-
-}
 sub get_root {
-    my  $self = shift;
-    return $self->get_shortcut( "%PROJET/" );
+    my $self = shift;
+    return $self->get_shortcut("%PROJET/");
 }
 
 sub get_url {
@@ -2881,8 +2842,8 @@ sub get_doc {
 }
 
 sub get_export {
-    my $self = shift;
-    my $format  = $self->{config}->get('format_export');
+    my $self   = shift;
+    my $format = $self->{config}->get('format_export');
     for (qw/CSV ods/) {
         my $ext = "AMC::Export::register::$format"->extension();
         if ( !$ext ) {
@@ -2994,24 +2955,26 @@ sub DESTROY {
 sub to_content {
     my $self    = shift;
     my $content = '';
-    #my $type    = 'text/plain';
-    #if (   ( ( scalar @{ $self->{errors} } ) == 0 )
-    #    && ( ( keys %{ $self->{data} } ) == 0 ) )
-    #{
-    #    $content = join( "\n", @{ $self->{messages} }.Dumper($self) );
-
-    #}
-    #else {
+    if ( $self->{status} = 400 ) {
+        return $self->return_400;
+    }
+    elsif ( $self->{status} = 403 ) {
+        return $self->return_403;
+    }
+    elsif ( $self->{status} = 404 ) {
+        return $self->return_404;
+    }
+    else {
         $type = 'application/json';
         $self->{status} = 500 if ( ( scalar @{ $self->{errors} } ) > 0 );
         $content = encode_json(
             {   status  => $self->{status},
-                message => join( "\n", @{ $self->{messages}}  ),
-                errors  => $self->{errors} ,
+                message => join( "\n", @{ $self->{messages} } ),
+                errors  => $self->{errors},
                 data    => $self->{data}
             }
         );
-	#}
+    }
     return ( $self->{status}, $type, length($content), $content );
 }
 
@@ -3076,16 +3039,98 @@ sub get_relatif {
 
 sub call {
     my ( $self, $action ) = @_;
+
     #my $base_url = $self->{config}->get('api_url');
     $action =~ s|/\z||;
     $self->{action} = $action;
     my $method = $ROUTING{$action};
     if ( $self->can($method) ) {
+        $self->{status} = 200;
         $self->$method;
     }
     else {
         $self->{status} = 400;
-        push( @{ $self->{messages} }, "Bad Request" );
     }
+
+    sub should_handle {
+        my ( $self, $file ) = @_;
+        return -f $file;
+    }
+
+    sub to_file {
+        my $self = shift;
+
+        if ( $self->{status} == 403 ) {
+            return $self->return_403;
+        }
+        if ( defined($file) ) {    #download
+            if ( -f $self->get_shortcut( "%PROJET/" . $file ) ) {
+                return (
+                    $self->serve_path(
+                        $self->get_shortcut( "%PROJET/" . $file )
+                    )
+                );
+            }
+            else {
+                return $self->return_404;
+            }
+        }
+        elsif ( defined( $self->{wanted_file} )
+            && ( -f $self->get_shortcut( $self->{wanted_file} ) ) )
+        {    #image
+            return (
+                $self->serve_path(
+                    $self->get_shortcut( $self->{wanted_file} )
+                )
+            );
+        }
+        else {
+            return $self->return_404;
+        }
+        return [ $self->{status}, ['Content-Type' => $type, 'Content-Length' => length($content)], $content ];
+
+    }
+
+    sub serve_path {
+        my ( $self, $file ) = @_;
+        my ( $ext ) = $file =~ /(\.[^.]+)$/;
+        my $content_type  = $MIME[$ext] || 'text/plain';
+
+        if ( $content_type =~ m!^text/! ) {
+            $content_type .= "; charset=" . ( $self->encoding || "utf-8" );
+        }
+
+        open my $fh, "<:raw", $file
+            or return $self->return_403;
+
+        my @stat = stat $file;
+
+        #Plack::Util::set_io_path( $fh, Cwd::realpath($file) );
+
+        return [
+            200,
+            [   'Content-Type'   => $content_type,
+                'Content-Length' => $stat[7],
+                'Last-Modified'  => HTTP::Date::time2str( $stat[9] )
+            ],
+            $fh,
+        ];
+    }
+
+    sub return_403 {
+    my $self = shift;
+    return [403, ['Content-Type' => 'text/plain', 'Content-Length' => 9], ['forbidden']];
+}
+ 
+sub return_400 {
+    my $self = shift;
+    return [400, ['Content-Type' => 'text/plain', 'Content-Length' => 11], ['Bad Request']];
+}
+ 
+
+sub return_404 {
+    my $self = shift;
+    return [404, ['Content-Type' => 'text/plain', 'Content-Length' => 9], ['not found']];
+}
 
 }

@@ -34,19 +34,38 @@ my $img = sub {
     my $env = shift;
     my $request = Plack::Request->new($env);
     my $api     = AMC::Api->new( $dir, $request );
-    my $file    = $api->get_file();
+    my ( $status, $headers, $content ) = $api->to_file();
+    my $response = $request->new_response();
+    if (my $url = $api->redirect())
+    {
+        $response->redirect($url);
+    } else {
+        $response->status($status);
+        $response->headers($headers);
+        $response->content($content);
+    }
+
     $api = undef;
-    return Plack::App::File->new( $file )->to_app($env);
+    return $response->finalize;
 };
 
 my $download = sub {
     my $env = shift;
     my $request = Plack::Request->new($env);
     my $api  = AMC::Api->new( $dir, $request);
-    #my $file = $api->get_file( $request->path_info );
-    my $root = $api->get_root();
+    my ( $status, $headers, $content ) = $api->to_file($request->path_info);
+     my $response = $request->new_response();
+    if (my $url = $api->redirect())
+    {
+        $response->redirect($url);
+    } else {
+        $response->status($status);
+        $response->headers($headers);
+        $response->content($content);
+    }
+
     $api = undef;
-    return Plack::App::File->new( root => $root )->to_app($env);
+    return $response->finalize;
 };
 
 my $process = sub {
@@ -56,15 +75,14 @@ my $process = sub {
 
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 
-    my ( $status, $type, $length, $content ) = $api->to_content;
+    my ( $status, $headers, $content ) = $api->to_content;
     my $response = $request->new_response();
     if (my $url = $api->redirect())
     {
         $response->redirect($url);
     } else {
         $response->status($status);
-        $response->content_type($type);
-        $response->content_length($length);
+        $response->headers($headers);
         $response->content($content);
     }
 
