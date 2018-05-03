@@ -30,16 +30,17 @@ use AMC::Api;
 
 my $dir    = cwd;
 my $config = AMC::Api::get_api_url($dir);
+
 my $img = sub {
-    my $env = shift;
+    my $env     = shift;
     my $request = Plack::Request->new($env);
     my $api     = AMC::Api->new( $dir, $request );
     my ( $status, $headers, $content ) = $api->to_file();
     my $response = $request->new_response();
-    if (my $url = $api->redirect())
-    {
+    if ( my $url = $api->redirect() ) {
         $response->redirect($url);
-    } else {
+    }
+    else {
         $response->status($status);
         $response->headers($headers);
         $response->content($content);
@@ -50,15 +51,15 @@ my $img = sub {
 };
 
 my $download = sub {
-    my $env = shift;
+    my $env     = shift;
     my $request = Plack::Request->new($env);
-    my $api  = AMC::Api->new( $dir, $request);
-    my ( $status, $headers, $content ) = $api->to_file($request->path_info);
-     my $response = $request->new_response();
-    if (my $url = $api->redirect())
-    {
+    my $api     = AMC::Api->new( $dir, $request );
+    my ( $status, $headers, $content ) = $api->to_file( $request->path_info );
+    my $response = $request->new_response();
+    if ( my $url = $api->redirect() ) {
         $response->redirect($url);
-    } else {
+    }
+    else {
         $response->status($status);
         $response->headers($headers);
         $response->content($content);
@@ -71,16 +72,16 @@ my $download = sub {
 my $process = sub {
     my $env     = shift;
     my $request = Plack::Request->new($env);
-    my $api     = AMC::Api->new( $dir, $request);
+    my $api     = AMC::Api->new( $dir, $request );
 
     $api->call( $request->path_info ) if ( $api->status() != 403 );
 
     my ( $status, $headers, $content ) = $api->to_content;
     my $response = $request->new_response();
-    if (my $url = $api->redirect())
-    {
+    if ( my $url = $api->redirect() ) {
         $response->redirect($url);
-    } else {
+    }
+    else {
         $response->status($status);
         $response->headers($headers);
         $response->content($content);

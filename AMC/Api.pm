@@ -2975,7 +2975,7 @@ sub to_content {
             }
         );
     }
-    return ( $self->{status}, $type, length($content), $content );
+    return ( $self->{status}, ['Content-Type' => $type, 'Content-Length' => length($content)], $content );
 }
 
 sub redirect {
@@ -3052,85 +3052,78 @@ sub call {
         $self->{status} = 400;
     }
 
-    sub should_handle {
-        my ( $self, $file ) = @_;
-        return -f $file;
+sub to_file {
+    my $self = shift;
+
+    if ( $self->{status} == 403 ) {
+        return $self->return_403;
     }
-
-    sub to_file {
-        my $self = shift;
-
-        if ( $self->{status} == 403 ) {
-            return $self->return_403;
-        }
-        if ( defined($file) ) {    #download
-            if ( -f $self->get_shortcut( "%PROJET/" . $file ) ) {
-                return (
-                    $self->serve_path(
-                        $self->get_shortcut( "%PROJET/" . $file )
-                    )
-                );
-            }
-            else {
-                return $self->return_404;
-            }
-        }
-        elsif ( defined( $self->{wanted_file} )
-            && ( -f $self->get_shortcut( $self->{wanted_file} ) ) )
-        {    #image
+    if ( defined($file) ) {    #download
+        if ( -f $self->get_shortcut( "%PROJET/" . $file ) ) {
             return (
                 $self->serve_path(
-                    $self->get_shortcut( $self->{wanted_file} )
+                    $self->get_shortcut( "%PROJET/" . $file )
                 )
             );
         }
         else {
             return $self->return_404;
         }
-        return [ $self->{status}, ['Content-Type' => $type, 'Content-Length' => length($content)], $content ];
+    }
+    elsif ( defined( $self->{wanted_file} )
+        && ( -f $self->get_shortcut( $self->{wanted_file} ) ) )
+    {    #image
+        return (
+            $self->serve_path(
+                $self->get_shortcut( $self->{wanted_file} )
+            )
+        );
+    }
+    else {
+        return $self->return_404;
+    }
+}
 
+sub serve_path {
+    my ( $self, $file ) = @_;
+    my ( $ext ) = $file =~ /(\.[^.]+)$/;
+    my $content_type  = $MIME[$ext] || 'text/plain';
+
+    if ( $content_type =~ m!^text/! ) {
+        $content_type .= "; charset=" . ( $self->encoding || "utf-8" );
     }
 
-    sub serve_path {
-        my ( $self, $file ) = @_;
-        my ( $ext ) = $file =~ /(\.[^.]+)$/;
-        my $content_type  = $MIME[$ext] || 'text/plain';
+    open my $fh, "<:raw", $file
+        or return $self->return_403;
+    my $content = <$fh>;
+    close $fh;
+    my @stat = stat $file;
 
-        if ( $content_type =~ m!^text/! ) {
-            $content_type .= "; charset=" . ( $self->encoding || "utf-8" );
-        }
+    #Plack::Util::set_io_path( $fh, Cwd::realpath($file) );
 
-        open my $fh, "<:raw", $file
-            or return $self->return_403;
+    return (
+        200,
+        [   'Content-Type'   => $content_type,
+            'Content-Length' => $stat[7]
+        ],
+        $content,
+    );
+}
 
-        my @stat = stat $file;
-
-        #Plack::Util::set_io_path( $fh, Cwd::realpath($file) );
-
-        return [
-            200,
-            [   'Content-Type'   => $content_type,
-                'Content-Length' => $stat[7],
-                'Last-Modified'  => HTTP::Date::time2str( $stat[9] )
-            ],
-            $fh,
-        ];
-    }
-
-    sub return_403 {
+sub return_403 {
     my $self = shift;
-    return [403, ['Content-Type' => 'text/plain', 'Content-Length' => 9], ['forbidden']];
+    return (403, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'forbidden');
 }
  
 sub return_400 {
     my $self = shift;
-    return [400, ['Content-Type' => 'text/plain', 'Content-Length' => 11], ['Bad Request']];
+    return (400, ['Content-Type' => 'text/plain', 'Content-Length' => 11], 'Bad Request');
 }
  
 
 sub return_404 {
     my $self = shift;
-    return [404, ['Content-Type' => 'text/plain', 'Content-Length' => 9], ['not found']];
+    return (404, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'not found');
 }
 
 }
