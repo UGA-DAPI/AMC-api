@@ -2649,7 +2649,7 @@ my %ROUTING = (
     '/quiz/upload/latex'            => 'source_latex_choisir',
     '/quiz/upload/zip'              => 'source_latex_choisir',
     '/document'                     => 'get_doc',
-    '/document/generate'            => 'doc_maj',
+    '/document/generate'            => 'generate_doc',
     '/document/latex'               => 'get_source',
     '/sheet/upload'                 => 'saisie_auto_ok',
     '/sheet/delete'                 => 'sheet_delete',
@@ -2811,11 +2811,6 @@ sub new {
     return $self;
 }
 
-sub get_root {
-    my $self = shift;
-    return $self->get_shortcut("%PROJET/");
-}
-
 sub get_url {
     my ( $self, $file, $type ) = (@_);
     my $url = $self->{server};
@@ -2861,7 +2856,7 @@ sub get_export {
 
 sub generate_zip {
     my $self    = shift;
-    my $zipfile = $config->get_shortcut('%PROJET') . '/documents.zip';
+    my $zipfile = $self->get_shortcut('%PROJET' . '/documents.zip');
 
     commande(
         'commande' => [
@@ -2955,13 +2950,13 @@ sub DESTROY {
 sub to_content {
     my $self    = shift;
     my $content = '';
-    if ( $self->{status} = 400 ) {
+    if ( $self->{status} == 400 ) {
         return $self->return_400;
     }
-    elsif ( $self->{status} = 403 ) {
+    elsif ( $self->{status} == 403 ) {
         return $self->return_403;
     }
-    elsif ( $self->{status} = 404 ) {
+    elsif ( $self->{status} == 404 ) {
         return $self->return_404;
     }
     else {
@@ -3054,7 +3049,7 @@ sub call {
 
 sub to_file {
     my $self = shift;
-
+    my ($file) = @_;
     if ( $self->{status} == 403 ) {
         return $self->return_403;
     }
@@ -3090,12 +3085,12 @@ sub serve_path {
     my $content_type  = $MIME[$ext] || 'text/plain';
 
     if ( $content_type =~ m!^text/! ) {
-        $content_type .= "; charset=" . ( $self->encoding || "utf-8" );
+        $content_type .= "; charset=utf-8";
     }
 
     open my $fh, "<:raw", $file
         or return $self->return_403;
-    my $content = <$fh>;
+    read( $fh ,my $content, -s $fh);
     close $fh;
     my @stat = stat $file;
 
@@ -3112,7 +3107,7 @@ sub serve_path {
 
 sub return_403 {
     my $self = shift;
-    return (403, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'forbidden');
+    return (403, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'Forbidden');
 }
  
 sub return_400 {
@@ -3123,7 +3118,8 @@ sub return_400 {
 
 sub return_404 {
     my $self = shift;
-    return (404, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'not found');
+    return (404, ['Content-Type' => 'text/plain', 'Content-Length' => 9], 'Not found');
+    #return (404, ['Content-Type' => 'text/plain'], 'Not found'.$self->get_shortcut('%PROJET/DOC-sujet.pdf'));
 }
 
 }
