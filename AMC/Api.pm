@@ -650,18 +650,18 @@ sub sujet_impressions_ok {
     my $self = shift;
     my $os   = 'none';
 
-    if ( $self->{config}->get('methode_impression') eq 'file' ) {
+    #if ( $self->{config}->get('methode_impression') eq 'file' ) {
 
         if ( !$self->{config}->get('options_impression/repertoire') ) {
             debug "Print to file : no destination...";
-            $self->set_config( 'options_impression/repertoire', '' );
+            $self->set_config( 'options_impression/repertoire', 'impression' );
         }
         else {
             my $path = $self->{config}
                 ->get_absolute('options_impression/repertoire');
             mkdir($path) if ( !-e $path );
         }
-    }
+    #}
 
     # Less than 10 pages selected: is it a mistake?
 
@@ -763,15 +763,15 @@ sub sujet_impressions_ok {
             "auto-multiple-choice",
             "imprime",
             "--methode",
-            $self->{config}->get('methode_impression'),
-            "--imprimante",
-            $self->{config}->get('imprimante'),
+            "file", # $self->{config}->get('methode_impression'),
+            #"--imprimante",
+            #$self->{config}->get('imprimante'),
             "--output",
             $self->{config}->get_absolute('options_impression/repertoire')
                 . "/sheet-%e.pdf",
             @o_answer,
-            "--print-command",
-            $self->{config}->get('print_command_pdf'),
+            #"--print-command",
+            #$self->{config}->get('print_command_pdf'),
             "--sujet",
             $self->{config}->get_absolute('doc_question'),
             "--data",
@@ -795,7 +795,7 @@ sub sujet_impressions_ok {
         'fin' => sub {
             my $c = shift;
             close( $c->{'o'}->{'fh'} );
-            $self->save_state_after_printing( $c->{'o'} );
+            #$self->save_state_after_printing( $c->{'o'} );
         },
 
     );
@@ -1715,6 +1715,7 @@ sub detecte_documents {
         $s = __("No working documents");
     }
     else {
+        
         $s = __("Working documents last update:") . " " . $s;
     }
 
@@ -2651,6 +2652,7 @@ my %ROUTING = (
     '/document'                     => 'get_doc',
     '/document/generate'            => 'generate_doc',
     '/document/latex'               => 'get_source',
+    '/document/latex'               => 'get_source',
     '/sheet/upload'                 => 'saisie_auto_ok',
     '/sheet/delete'                 => 'sheet_delete',
     '/sheet/delete/unknown'         => 'unrecognized_delete_all',
@@ -2875,6 +2877,7 @@ sub generate_zip {
 sub generate_doc {
     my $self = shift;
     $self->doc_maj();
+    $self->calcule_mep();
     $self->sujet_impressions_ok();
     $self->generate_zip();
 
